@@ -97,7 +97,8 @@ try {
     }
 
     Write-Host "Pushing local main branch ..."
-    git -c "http.extraheader=AUTHORIZATION: bearer $token" push -u origin main
+    $basicToken = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$token"))
+    git -c "http.extraheader=AUTHORIZATION: basic $basicToken" push -u origin main
     if ($LASTEXITCODE -ne 0) {
         throw "git push failed."
     }
@@ -106,5 +107,6 @@ try {
     Write-Host "Published: $($repo.html_url)"
 }
 finally {
+    Remove-Variable basicToken -ErrorAction SilentlyContinue
     Remove-Variable token -ErrorAction SilentlyContinue
 }
