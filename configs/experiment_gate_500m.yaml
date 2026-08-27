@@ -1,0 +1,17 @@
+pilot:
+  repeats: 3
+  seeds: [2026082201, 2026082202, 2026082203]
+  tokens_per_run: 500000000
+  models:
+    recal: configs/recal_150m.yaml
+    baseline: configs/baseline_150m.yaml
+
+promotion_gate:
+  metric: validation_loss
+  recal_average_must_be_lower: true
+  minimum_paired_recal_wins: 2
+
+full:
+  tokens_per_run: 3000000000
+  start_only_when_gate_passes: true
+

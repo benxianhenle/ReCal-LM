@@ -1,0 +1,17 @@
+[project]
+name = "recal-lm-demo"
+version = "0.1.0"
+description = "PyTorch demo implementation of ReCal-LM and matched baseline"
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "pyyaml",
+  "tokenizers",
+  "datasets",
+  "tqdm",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+

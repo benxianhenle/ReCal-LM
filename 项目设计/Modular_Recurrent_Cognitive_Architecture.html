@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模块化循环认知架构</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a31;--panel2:#18223f;--text:#eef3ff;--muted:#9eb0d3;--accent:#75a7ff;--good:#8fe3b1;--warn:#ffd37a;--violet:#b7a1ff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 10% 0,#17244b 0,transparent 35%),radial-gradient(circle at 90% 20%,#271c46 0,transparent 28%),var(--bg);color:var(--text);font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;line-height:1.7}
+main{max-width:1160px;margin:auto;padding:38px 22px 76px}.hero{text-align:center;padding:52px 16px}.hero h1{font-size:clamp(32px,5vw,58px);margin:0 0 12px}.hero p{max-width:900px;margin:auto;color:var(--muted);font-size:18px}.badges{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:20px}.badge{border:1px solid #33436f;background:#111a33;padding:6px 11px;border-radius:999px;color:#c9d7f7}
+section{background:linear-gradient(180deg,rgba(18,26,49,.95),rgba(13,20,39,.93));border:1px solid #26345a;border-radius:20px;padding:26px;margin:22px 0;box-shadow:0 18px 55px rgba(0,0,0,.18)}
+h2{font-size:28px;margin-top:0}h3{margin-bottom:8px}.kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;font-size:12px}.quote{font-size:21px;border-left:4px solid var(--accent);padding:10px 18px;background:#0d1630;border-radius:0 12px 12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:14px}.card{background:var(--panel2);border:1px solid #2a3a64;border-radius:14px;padding:16px}.mono,code,pre{font-family:Consolas,monospace;color:#d6e4ff}
+.diagram{overflow:auto;background:#0a1125;border:1px solid #273861;border-radius:16px;padding:18px}.flow{min-width:910px;display:grid;grid-template-columns:150px 70px 185px 70px 230px 70px 170px;align-items:center;gap:8px}.node{text-align:center;padding:16px 10px;border:1px solid #41578b;border-radius:14px;background:#121d39;min-height:74px;display:flex;align-items:center;justify-content:center;font-weight:700}.core{border-color:var(--accent);animation:pulse 2.2s ease-in-out infinite}.exec{border-color:var(--warn)}.arrow{height:4px;background:linear-gradient(90deg,#334776,var(--accent),#334776);position:relative;border-radius:8px;overflow:hidden}.arrow:after{content:"";position:absolute;top:-3px;width:22px;height:10px;background:white;border-radius:50%;filter:blur(2px);animation:move 1.5s linear infinite}@keyframes move{from{left:-25px}to{left:100%}}@keyframes pulse{50%{transform:scale(1.025);box-shadow:0 0 28px rgba(117,167,255,.24)}}
+.loop{margin-top:20px;text-align:center;color:#c9bcff;font-weight:700}.rack{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px}.rmod{padding:14px;text-align:center;border:1px solid #344a7d;background:#14203e;border-radius:12px;animation:active 5s ease-in-out infinite}.rmod:nth-child(2){animation-delay:1s}.rmod:nth-child(3){animation-delay:2s}.rmod:nth-child(4){animation-delay:3s}.rmod:nth-child(5){animation-delay:4s}@keyframes active{0%,70%,100%{opacity:.45}10%,45%{opacity:1;transform:translateY(-4px);box-shadow:0 0 22px rgba(117,167,255,.18);border-color:#8cb6ff}}
+.metric{height:12px;border-radius:99px;background:#233151;overflow:hidden}.metric span{display:block;height:100%;width:8%;background:linear-gradient(90deg,var(--good),var(--warn),#ff8aa5);animation:drift 7s linear infinite}@keyframes drift{0%{width:8%}70%{width:88%}75%{width:12%}100%{width:28%}}
+.small{font-size:13px;color:var(--muted)}footer{text-align:center;color:#8091b6;padding-top:18px}
+</style>
+</head>
+<body><main>
+<header class="hero"><div class="kicker">CONCEPT ARCHITECTURE</div><h1>模块化循环认知架构</h1><p>以统一“意识空间 / 工作空间”为核心，让语言、视觉、音频、控制等能力成为可组合的 R 循环模块；执行器读取当前循环产生的意图，动态决定下一轮激活哪些 R，从而形成持续、可调度、可校正的闭环思考。</p><div class="badges"><span class="badge">统一认知空间</span><span class="badge">模块化多模态</span><span class="badge">动态 R 路由</span><span class="badge">局部更新</span><span class="badge">全局注意力校正</span><span class="badge">算力可控</span></div></header>
+
+<section><div class="kicker">01 · PURPOSE</div><h2>创建这个架构的目的</h2><p class="quote">不是制造一个必须同时运行全部能力的巨大单体模型，而是建立一个持续存在的认知核心：需要什么能力，就让对应模块进入当前循环，共同更新同一份认知状态。</p><div class="grid">
+<div class="card"><h3>摆脱固定流水线</h3><p>思考不再只是一次前向传播，而是“状态 → 选择 → 局部计算 → 更新 → 再选择”。</p></div>
+<div class="card"><h3>多模态真正统一</h3><p>统一的是共享认知状态，不要求图像、音频、文本都使用相同网络。</p></div>
+<div class="card"><h3>按需分配算力</h3><p>当前只关注听觉，就只激活语言、音频和必要记忆；生成视频时再调入视觉、时序和音频模块。</p></div>
+<div class="card"><h3>能力持续扩展</h3><p>未来增加触觉、机械控制等能力时，重点训练新 R 与核心的联合认知对齐。</p></div>
+</div></section>
+
+<section><div class="kicker">02 · MINIMAL CLOSED LOOP</div><h2>最简单闭环：主 R → 解码器 → 执行器 → 下一轮 R</h2>
+<div class="diagram"><div class="flow"><div class="node">输入 / 当前状态</div><div class="arrow"></div><div class="node core">主 R 循环<br><span class="small">更新 Workspace</span></div><div class="arrow"></div><div class="node">当前执行模块的解码器<br><span class="small">把状态变成操作意图</span></div><div class="arrow"></div><div class="node exec">执行器 / Router<br><span class="small">决定下一轮激活谁</span></div></div><div class="loop">↺ 执行器选择下一轮 R 组合，并把新输入 / 反馈送回 Workspace</div></div>
+<p>执行器网络承担的是认知调度：解析当前 R 的下一步意图，决定下一轮调用哪些 R 循环体、运行次数、资源预算和输出头。</p></section>
+
+<section><div class="kicker">03 · DYNAMIC COMPOSITION</div><h2>R 模块按任务动态组合</h2><div class="rack"><div class="rmod">R Language</div><div class="rmod">R Vision</div><div class="rmod">R Audio</div><div class="rmod">R Control</div><div class="rmod">R Memory</div></div>
+<div class="grid"><div class="card"><h3>专注听内容</h3><p class="mono">Language + Audio (+ Memory)</p></div><div class="card"><h3>图像问答</h3><p class="mono">Vision + Language</p></div><div class="card"><h3>视频生成</h3><p class="mono">Text + Vision + Temporal + Audio</p></div><div class="card"><h3>摄像机控制</h3><p class="mono">Vision + Control + Language</p></div></div>
+<p>组合不是固定的。摄像机控制可以三个模块同时激活，也可以按训练目标采用 Vision-Control、Language-Control、Vision-Language 等两两耦合。</p></section>
+
+<section><div class="kicker">04 · SHARED WORKSPACE</div><h2>统一的是认知空间，而不是所有模块的结构</h2><div class="diagram"><pre>
+Text Encoder ─────┐
+Vision Encoder ───┼─────┐
+Audio Encoder ────┤     ▼
+Control Feedback ─┘  ┌────────────────────┐
+                     │ Shared Workspace   │
+                     │ Persistent State S │
+                     └────────────────────┘
+                         ▲          │
+                         │          ▼
+                  Specialized R Modules
+                         │
+                  Router / Executor
+                         │
+                         └────────────↺
+</pre></div><p>新模块可以拥有独立结构，但训练时要与核心语言 / 认知模块共同参与，使它学会在同一个 Workspace 中表达、读取和修改状态。</p></section>
+
+<section><div class="kicker">05 · ATTENTION TEACHER</div><h2>训练方向一：完整注意力作为循环体教师</h2>
+<div class="grid"><div class="card"><h3>教师路径</h3><p class="mono">S*t = FullAttention(history + new input)</p><p>得到加入新信息后，历史与新输入充分融合的高质量状态。</p></div><div class="card"><h3>循环路径</h3><p class="mono">Ŝt = R(St-1, Δinput)</p><p>R 学习在不重算全部历史的情况下更新状态。</p></div></div>
+<p>训练同时包含状态对齐和任务解码，让 R 学的是“认知状态如何变化”，而不只是 next-token。</p></section>
+
+<section><div class="kicker">06 · COUPLED TRAINING</div><h2>训练方向二：特定耦合联动训练</h2>
+<div class="card"><h3>例：摄像机控制</h3><p><span class="mono">Vision + Language + Control</span>：视觉判断画面，语言 / 核心表示目标与计划，控制模块输出移动、旋转、缩放、对焦等操作。</p><p><span class="mono">Vision + Control</span>：视觉闭环跟踪；<br><span class="mono">Language + Control</span>：指令到控制策略；<br><span class="mono">Vision + Language</span>：场景理解与空间关系。</p></div>
+<p>模块可以局部专业化，但认知语义通过与核心联合训练保持一致。</p></section>
+
+<section><div class="kicker">07 · DRIFT & CALIBRATION</div><h2>训练方向三：漂移累计模型 + 全局注意力纠正</h2><p>连续局部 R 循环可能产生误差累计，因此显式训练漂移估计器，预测当前状态距离完整全局计算状态有多远。</p>
+<div class="card"><strong>Estimated Drift</strong><div class="metric"><span></span></div><p class="mono">if drift &gt; τ → Full Global Attention / Calibration</p></div>
+<p>当漂移达到阈值、模块冲突增大、任务切换或进入关键决策时，触发完整全局注意力重新整合信息并把 Workspace 重新锚定。</p></section>
+
+<section><div class="kicker">08 · LAYER-WISE GENERATION</div><h2>生成也可以逐层关注，而非一次全部完成</h2><div class="grid">
+<div class="card"><h3>第 1 轮</h3><p>布局 / 镜头 / 角色位置</p></div><div class="card"><h3>第 2 轮</h3><p>人物主体与姿态</p></div><div class="card"><h3>第 3 轮</h3><p>背景与空间关系</p></div><div class="card"><h3>第 4 轮</h3><p>图层、材质、局部细节</p></div><div class="card"><h3>第 5 轮</h3><p>动作 / 时序连续性</p></div><div class="card"><h3>第 6 轮</h3><p>音频 / 配音 / 口型同步</p></div>
+</div><p>Router 可以把下一轮计算集中到某个图层、对象或模态，而不是要求所有内容同时被修改。</p></section>
+
+<section><div class="kicker">09 · SCALING PATH</div><h2>从最简单到多种搭配</h2><div class="grid">
+<div class="card"><h3>Stage 1</h3><p><strong>单一语言 R</strong><br>验证循环状态、Attention Teacher、漂移与全局校正。</p></div>
+<div class="card"><h3>Stage 2</h3><p><strong>Language + Vision</strong><br>验证共享 Workspace 和双模块联合训练。</p></div>
+<div class="card"><h3>Stage 3</h3><p><strong>+ Audio</strong><br>验证双模块 / 三模块动态组合和 Router 学习。</p></div>
+<div class="card"><h3>Stage 4</h3><p><strong>+ Control</strong><br>形成感知 → 思考 → 执行 → 新感知的闭环。</p></div>
+<div class="card"><h3>Stage 5</h3><p><strong>更多专业 R</strong><br>触觉、机械控制、空间、记忆、工具等按需接入。</p></div>
+</div></section>
+
+<section><div class="kicker">10 · CORE LOOP</div><h2>最终核心闭环</h2><p class="quote mono">S_t → Router / Executor → {R_i, R_j, ...} → ΔS_t → S_(t+1) → Decoder / Action → Feedback → ↺</p><p><strong>统一状态、模块计算、动态路由、局部更新、漂移监测、全局校正。</strong></p></section>
+
+<footer>Modular Recurrent Cognitive Architecture · Concept Draft</footer>
+</main></body></html>

@@ -1,0 +1,33 @@
+model_type: recal
+name: ReCal-LM-150M
+vocab_size: 32000
+context_length: 2048
+hidden_size: 768
+num_heads: 12
+head_dim: 64
+nominal_ffn_dim: 3072
+ffn_dim: 2048
+front_layers: 7
+recurrent_layers: 4
+back_layers: 7
+dropout: 0.1
+tie_embeddings: true
+loop_choices: [1, 2, 4, 8]
+loop_probs: [0.20, 0.25, 0.35, 0.20]
+router_hidden_size: 384
+drift_hidden_size: 384
+router_drift_thresholds: [0.10, 0.20, 0.35]
+router_exploration_prob: 0.10
+drift_threshold: 0.30
+lambda_state: 0.1
+lambda_kd: 0.5
+lambda_drift: 0.05
+lambda_router: 0.01
+precision: bf16
+
+training:
+  learning_rate: 0.0003
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  warmup_steps: 100
+  max_steps: 1000
