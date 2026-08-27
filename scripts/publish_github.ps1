@@ -69,11 +69,22 @@ try {
 
     Write-Host ""
     Write-Host "Creating https://github.com/$($user.login)/$repoName ..."
-    $repo = Invoke-RestMethod -Method Post -Uri "https://api.github.com/user/repos" -Headers $headers -Body $body -ContentType "application/json"
+    try {
+        $repo = Invoke-RestMethod -Method Post -Uri "https://api.github.com/user/repos" -Headers $headers -Body $body -ContentType "application/json"
+    }
+    catch {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 422) {
+            Write-Host "Repository already exists; reusing it."
+            $repo = Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$($user.login)/$repoName" -Headers $headers
+        }
+        else {
+            throw
+        }
+    }
 
     $remoteUrl = $repo.clone_url
-    $existingOrigin = git remote get-url origin 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingOrigin)) {
+    $remoteNames = @(git remote)
+    if ($remoteNames -contains "origin") {
         git remote set-url origin $remoteUrl
     }
     else {
