@@ -416,49 +416,6 @@ CPU 一步 smoke 训练：
 
 `.jsonl` 训练数据使用 streaming 方式读取，不会一次性全部加载进内存。
 
-## 发布到 GitHub
-
-仓库包含 `scripts/publish_github.ps1`，用于创建 GitHub 仓库并推送 `main`。
-脚本不会把 token 写入 Git 配置，也不会把 token 保存到文件。
-
-运行：
-
-```powershell
-.\scripts\publish_github.ps1
-```
-
-脚本会询问：
-
-- 仓库名，默认 `ReCal-LM`
-- 可见性，默认 `public`
-- 仓库说明
-- GitHub token，隐藏输入
-
-token 权限：
-
-- Classic token：公开仓库用 `public_repo`，私有仓库用 `repo`
-- Fine-grained token：需要能访问目标仓库，并有 `Contents: Read and write`
-
-当前本地 remote：
-
-```text
-origin https://github.com/benxianhenle/ReCal-LM.git
-```
-
-## Git 安全规则
-
-仓库会忽略本地秘密、数据、缓存和训练产物：
-
-- `.conf`
-- `.hf_cache/`
-- `data/`
-- `runs/`
-- `artifacts/`
-- Python cache
-- model checkpoint files
-
-不要提交 API token、数据集大文件、checkpoint 或本地缓存。
-
 ## License
 
 MIT License。见 `LICENSE`。
