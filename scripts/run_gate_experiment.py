@@ -1,3 +1,7 @@
+"""Orchestrate the paired 3x500M ReCal-vs-baseline gate experiment.
+
+中文：编排三组配对 500M token 的 ReCal 对 baseline gate 实验。"""
+
 import argparse
 import json
 import subprocess
@@ -10,6 +14,10 @@ PLACEHOLDER_BITS = ("path\\to", "path/to", "your\\", "your/")
 
 
 def parse_count(value: str) -> int:
+    """Parse compact count strings such as 500M into integer totals.
+
+中文：将 500M 等紧凑计数字符串解析为整数总量。"""
+
     text = str(value).strip().replace("_", "").lower()
     multipliers = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
     if text[-1:] in multipliers:
@@ -18,6 +26,10 @@ def parse_count(value: str) -> int:
 
 
 def parse_seeds(value: str) -> list[int]:
+    """Parse and validate the three paired random seeds for the gate.
+
+中文：解析并校验 gate 实验所需的三个配对随机种子。"""
+
     seeds = [int(part.strip()) for part in value.split(",") if part.strip()]
     if len(seeds) != 3:
         raise argparse.ArgumentTypeError("Exactly three seeds are required")
@@ -25,6 +37,10 @@ def parse_seeds(value: str) -> list[int]:
 
 
 def rel(path: Path) -> str:
+    """Return a path relative to the project root when possible.
+
+中文：尽可能返回相对于项目根目录的路径。"""
+
     try:
         return str(path.relative_to(ROOT))
     except ValueError:
@@ -32,10 +48,18 @@ def rel(path: Path) -> str:
 
 
 def command_text(cmd: list[str]) -> str:
+    """Format a subprocess command for logs and plan files.
+
+中文：将子进程命令格式化，供日志和计划文件使用。"""
+
     return " ".join(cmd)
 
 
 def run_command(cmd: list[str], plan_only: bool, verbose: bool = True) -> str:
+    """Print a command and optionally execute it.
+
+中文：打印命令，并按需实际执行。"""
+
     text = command_text(cmd)
     if verbose:
         print(text, flush=True)
@@ -45,6 +69,10 @@ def run_command(cmd: list[str], plan_only: bool, verbose: bool = True) -> str:
 
 
 def looks_like_placeholder(value: str | None) -> bool:
+    """Detect example path fragments that should not run real experiments.
+
+中文：检测不应参与真实实验的示例路径片段。"""
+
     if not value:
         return False
     text = value.lower()
@@ -52,6 +80,10 @@ def looks_like_placeholder(value: str | None) -> bool:
 
 
 def validate_paths(args) -> None:
+    """Validate train, validation, and tokenizer paths before running jobs.
+
+中文：在运行任务前校验训练、验证和 tokenizer 路径。"""
+
     warnings = []
     errors = []
     for label, value in [("train-data", args.train_data), ("val-data", args.val_data), ("tokenizer", args.tokenizer)]:
@@ -81,6 +113,10 @@ def validate_paths(args) -> None:
 
 
 def evaluate_command(args, config: Path, checkpoint: Path, output_json: Path) -> tuple[dict | None, str]:
+    """Build and optionally run the validation command for one checkpoint.
+
+中文：为一个 checkpoint 构建并可选执行验证命令。"""
+
     cmd = [
         sys.executable,
         str(ROOT / "scripts" / "evaluate.py"),
@@ -116,11 +152,16 @@ def evaluate_command(args, config: Path, checkpoint: Path, output_json: Path) ->
 
 
 def train_one(args, model_name: str, config: Path, seed: int, tokens: int, stage: str) -> tuple[Path, str]:
+    """Train or plan one model/seed/stage run and return its last checkpoint path.
+
+中文：训练或规划一个模型/种子/阶段组合，并返回其 last checkpoint 路径。"""
+
     run_dir = Path(args.output) / stage / f"seed_{seed}" / model_name
     run_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = run_dir / "checkpoint_last.pt"
     resume_checkpoint = checkpoint
     if not resume_checkpoint.exists():
+        # Fall back to the newest numbered interval checkpoint if last is missing.
         numbered = sorted(run_dir.glob("checkpoint_*.pt"), key=lambda path: path.stat().st_mtime, reverse=True)
         numbered = [path for path in numbered if path.name != "checkpoint_last.pt"]
         if numbered:
@@ -163,6 +204,10 @@ def train_one(args, model_name: str, config: Path, seed: int, tokens: int, stage
 
 
 def write_full_plan(args, seeds: list[int], recal_config: Path, baseline_config: Path) -> Path:
+    """Write a PowerShell launcher for the full 3B-token follow-up runs.
+
+中文：为后续完整 3B token 训练写出 PowerShell 启动脚本。"""
+
     plan_path = Path(args.output) / "start_full_3b.ps1"
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -205,6 +250,10 @@ def write_full_plan(args, seeds: list[int], recal_config: Path, baseline_config:
 
 
 def parse_args():
+    """Parse gate orchestration options.
+
+中文：解析 gate 编排脚本选项。"""
+
     parser = argparse.ArgumentParser(description="Run the 3x500M ReCal/Baseline gate, then optionally start 3B runs.")
     parser.add_argument("--recal-config", default=str(ROOT / "configs" / "recal_150m.yaml"))
     parser.add_argument("--baseline-config", default=str(ROOT / "configs" / "baseline_150m.yaml"))
@@ -233,6 +282,10 @@ def parse_args():
 
 
 def main() -> None:
+    """Run or plan the pilot gate, write summary JSON, and handle promotion.
+
+中文：运行或规划 pilot gate，写出汇总 JSON，并处理晋级逻辑。"""
+
     args = parse_args()
     validate_paths(args)
     if args.plan_only:
@@ -250,6 +303,7 @@ def main() -> None:
     planned_train_jobs = 0
     planned_eval_jobs = 0
     for seed in args.seeds:
+        # Each seed trains and evaluates both models so paired wins are meaningful.
         seed_result = {"seed": seed}
         for model_name, config in [("recal", recal_config), ("baseline", baseline_config)]:
             checkpoint, train_text = train_one(args, model_name, config, seed, args.pilot_tokens, "pilot_500m")
@@ -272,6 +326,7 @@ def main() -> None:
 
     summary = {"pilot_tokens_per_run": args.pilot_tokens, "seeds": args.seeds}
     if not args.plan_only:
+        # Promotion requires both lower average loss and at least two paired wins.
         summary["results"] = results
         recal_losses = [item["recal"]["loss"] for item in results]
         baseline_losses = [item["baseline"]["loss"] for item in results]

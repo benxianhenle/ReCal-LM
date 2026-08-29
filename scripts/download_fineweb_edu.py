@@ -1,3 +1,7 @@
+"""Stream a bounded FineWeb-Edu shard into local train/validation JSONL files.
+
+中文：将有界 FineWeb-Edu 数据分片流式写入本地训练/验证 JSONL 文件。"""
+
 import argparse
 import json
 import os
@@ -11,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_count(value: str) -> int:
+    """Parse byte/token counts such as 10M, 500M, or 3G.
+
+中文：解析 10M、500M、3G 等字节数或 token 数写法。"""
+
     text = str(value).strip().replace("_", "").lower()
     multipliers = {"k": 1_000, "m": 1_000_000, "g": 1_000_000_000, "b": 1_000_000_000}
     if text[-1:] in multipliers:
@@ -19,6 +27,10 @@ def parse_count(value: str) -> int:
 
 
 def load_conf(path: str | None) -> dict:
+    """Load optional KEY=\"VALUE\" secrets/config without failing on absence.
+
+    中文：加载可选的 KEY=\"VALUE\" 密钥/配置；文件不存在时不报错。"""
+
     if not path:
         return {}
     conf_path = Path(path)
@@ -34,6 +46,10 @@ def load_conf(path: str | None) -> dict:
 
 
 def set_hf_environment(args) -> None:
+    """Configure HuggingFace cache locations and token environment variables.
+
+中文：配置 HuggingFace 缓存位置和 token 环境变量。"""
+
     cache_dir = Path(args.cache_dir) if args.cache_dir else ROOT / ".hf_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("HF_HOME", str(cache_dir))
@@ -46,6 +62,10 @@ def set_hf_environment(args) -> None:
 
 
 def row_payload(row: dict) -> dict:
+    """Keep the training text plus useful FineWeb-Edu provenance fields.
+
+中文：保留训练文本以及有用的 FineWeb-Edu 来源字段。"""
+
     return {
         "text": row.get("text", ""),
         "id": row.get("id"),
@@ -58,6 +78,10 @@ def row_payload(row: dict) -> dict:
 
 
 def write_jsonl_row(handle, row: dict) -> int:
+    """Write one UTF-8 JSONL row and return the number of bytes written.
+
+中文：写入一行 UTF-8 JSONL，并返回写入的字节数。"""
+
     data = json.dumps(row_payload(row), ensure_ascii=False) + "\n"
     encoded = data.encode("utf-8")
     handle.write(encoded)
@@ -65,6 +89,10 @@ def write_jsonl_row(handle, row: dict) -> int:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse streaming download options.
+
+中文：解析流式下载命令行选项。"""
+
     parser = argparse.ArgumentParser(description="Stream a bounded FineWeb-Edu sample to local JSONL files.")
     parser.add_argument("--dataset", default="HuggingFaceFW/fineweb-edu")
     parser.add_argument("--config", default="sample-10BT")
@@ -82,6 +110,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Stream data until train and validation byte/token targets are reached.
+
+中文：持续流式读取数据，直到训练和验证的字节/token 目标达成。"""
+
     args = parse_args()
     set_hf_environment(args)
     from datasets import load_dataset
@@ -121,6 +153,7 @@ def main() -> None:
                 continue
             row_tokens = int(row.get("token_count") or 0)
             if target_by_tokens and row_tokens <= 0:
+                # FineWeb rows can omit token_count; use a conservative byte heuristic.
                 row_tokens = max(1, len(text.encode("utf-8")) // 4)
 
             if train_metric < train_target:
@@ -145,6 +178,7 @@ def main() -> None:
                     flush=True,
                 )
 
+    # Atomic-ish promotion keeps partially written temp files out of normal runs.
     tmp_train.replace(train_path)
     tmp_val.replace(val_path)
     manifest = {

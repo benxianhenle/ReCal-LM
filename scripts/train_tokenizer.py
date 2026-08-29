@@ -1,3 +1,7 @@
+"""Train a byte-level BPE tokenizer for ReCal-LM experiments.
+
+中文：为 ReCal-LM 实验训练字节级 BPE tokenizer。"""
+
 import argparse
 import json
 from pathlib import Path
@@ -13,6 +17,10 @@ SPECIAL_TOKENS = ["<pad>", "<bos>", "<eos>", "<unk>"]
 
 
 def main():
+    """Train a tokenizer from UTF-8 text or JSONL text fields and save JSON.
+
+中文：从 UTF-8 文本或 JSONL 文本字段训练 tokenizer 并保存 JSON。"""
+
     parser = argparse.ArgumentParser(description="Train a BPE tokenizer for ReCal-LM.")
     parser.add_argument("--input", nargs="+", required=True, help="One or more UTF-8 text files.")
     parser.add_argument("--output", required=True, help="Output tokenizer JSON.")
@@ -26,6 +34,10 @@ def main():
     jsonl_inputs = [path for path in args.input if Path(path).suffix.lower() == ".jsonl"]
     if jsonl_inputs:
         def iterator():
+            """Yield raw text from mixed JSONL and plain-text input files.
+
+中文：从混合的 JSONL 和纯文本输入文件中产出原始文本。"""
+
             for input_path in args.input:
                 path = Path(input_path)
                 if path.suffix.lower() == ".jsonl":

@@ -1,3 +1,7 @@
+"""Evaluate ReCal-LM or baseline checkpoints on packed validation text.
+
+中文：在打包后的验证文本上评估 ReCal-LM 或 baseline checkpoint。"""
+
 import argparse
 import json
 import sys
@@ -18,6 +22,10 @@ from recal.training.checkpoint import load_checkpoint
 
 
 def parse_args():
+    """Parse evaluation command-line options.
+
+中文：解析评估脚本的命令行选项。"""
+
     parser = argparse.ArgumentParser(description="Evaluate validation loss and loop drift.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", default=None)
@@ -32,6 +40,10 @@ def parse_args():
 
 
 def main():
+    """Load a model, run bounded validation batches, and print JSON metrics.
+
+中文：加载模型，运行有限批次验证，并输出 JSON 指标。"""
+
     args = parse_args()
     with open(args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -56,6 +68,7 @@ def main():
     router_expected_loops = []
     router_calibration_probs = []
     with torch.no_grad():
+        # ReCal emits auxiliary drift/router metrics; baseline emits only LM loss.
         for idx, (x, y) in enumerate(loader):
             if idx >= args.batches:
                 break

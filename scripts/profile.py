@@ -1,8 +1,21 @@
+"""Quick parameter, throughput, and rough FLOP profiler for ReCal-LM configs.
+
+中文：用于 ReCal-LM 配置的快速参数量、吞吐量和粗略 FLOP profiler。"""
+
+
 def run(statement, filename=None, sort=-1):
+    """Reject accidental use as the standard-library profile module.
+
+中文：拒绝被误当作标准库 profile 模块使用。"""
+
     raise RuntimeError("This is the ReCal-LM profile script, not the stdlib profile module.")
 
 
 def runctx(statement, globals=None, locals=None, filename=None, sort=-1):
+    """Reject accidental contextual profiling imports from the stdlib API.
+
+中文：拒绝标准库 API 形式的上下文 profiling 误导入。"""
+
     raise RuntimeError("This is the ReCal-LM profile script, not the stdlib profile module.")
 
 
@@ -25,6 +38,10 @@ if __name__ != "profile":
 
 
 def main():
+    """Instantiate one model and measure a tiny forward-pass throughput sample.
+
+中文：实例化一个模型，并测量小批量前向吞吐样本。"""
+
     parser = argparse.ArgumentParser(description="Parameter and tiny throughput profile.")
     parser.add_argument("--config", required=True)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -49,6 +66,7 @@ def main():
         model(x)
         if device.type == "cuda":
             torch.cuda.synchronize()
+        # Time only repeated warmed forward passes, not model construction.
         t0 = time.perf_counter()
         for _ in range(args.steps):
             model(x)

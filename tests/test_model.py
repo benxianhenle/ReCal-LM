@@ -1,9 +1,17 @@
+"""Smoke tests for ReCal-LM and baseline forward passes.
+
+中文：ReCal-LM 和 baseline 前向过程的冒烟测试。"""
+
 import torch
 
 from recal.model import BaselineLM, ReCalLM
 
 
 def tiny_recal_config():
+    """Return a tiny ReCal config that exercises all auxiliary loss heads.
+
+中文：返回一个能覆盖所有辅助 loss head 的极小 ReCal 配置。"""
+
     return {
         "model_type": "recal",
         "vocab_size": 128,
@@ -29,6 +37,10 @@ def tiny_recal_config():
 
 
 def test_recal_forward_with_loop_losses():
+    """Verify ReCal forward output shapes and scalar auxiliary losses.
+
+中文：验证 ReCal 前向输出形状和标量辅助损失。"""
+
     model = ReCalLM(tiny_recal_config())
     x = torch.randint(4, 128, (2, 16))
     y = torch.randint(4, 128, (2, 16))
@@ -46,6 +58,10 @@ def test_recal_forward_with_loop_losses():
 
 
 def test_baseline_forward():
+    """Verify baseline forward output shapes and scalar LM loss.
+
+中文：验证 baseline 前向输出形状和标量语言模型损失。"""
+
     config = {
         "model_type": "baseline",
         "vocab_size": 128,

@@ -1,3 +1,7 @@
+"""Matched dense Transformer language model used as the ReCal baseline.
+
+中文：作为 ReCal 对照组使用的匹配稠密 Transformer 语言模型。"""
+
 from typing import Optional
 
 import torch
@@ -8,7 +12,15 @@ from .layers import RMSNorm, TransformerBlock, TransformerConfig, init_weights
 
 
 class BaselineLM(nn.Module):
+    """Standard decoder-only LM with the same layer primitives as ReCal-LM.
+
+中文：与 ReCal-LM 使用相同层组件的标准 decoder-only 语言模型。"""
+
     def __init__(self, config: dict):
+        """Construct embeddings, Transformer blocks, norm, and output head.
+
+中文：构建词嵌入、Transformer 块、归一化层和输出头。"""
+
         super().__init__()
         self.config = config
         layer_config = TransformerConfig(
@@ -30,6 +42,10 @@ class BaselineLM(nn.Module):
         self.apply(init_weights)
 
     def forward(self, input_ids: torch.Tensor, labels: Optional[torch.Tensor] = None) -> dict:
+        """Return logits, hidden states, and optional next-token loss.
+
+中文：返回 logits、隐藏状态，以及可选的下一词损失。"""
+
         _, seq_len = input_ids.shape
         position_ids = torch.arange(seq_len, device=input_ids.device)
         x = self.drop(self.embed_tokens(input_ids))

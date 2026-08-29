@@ -1,3 +1,7 @@
+"""Fetch a small FineWeb-Edu rows-API sample and write it as JSONL text.
+
+中文：拉取一小份 FineWeb-Edu rows API 样本，并写成 JSONL 文本。"""
+
 import argparse
 import json
 import re
@@ -6,6 +10,10 @@ from pathlib import Path
 
 
 def load_conf(path: str | Path) -> dict:
+    """Read simple KEY=\"VALUE\" entries from a local config file.
+
+    中文：从本地配置文件读取简单的 KEY=\"VALUE\" 项。"""
+
     conf = {}
     pattern = re.compile(r'^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*$')
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -16,6 +24,10 @@ def load_conf(path: str | Path) -> dict:
 
 
 def main():
+    """Download rows from the configured API endpoint into a text JSONL file.
+
+中文：从配置的 API 端点下载 rows，并写入文本 JSONL 文件。"""
+
     parser = argparse.ArgumentParser(description="Fetch a tiny rows-API sample into JSONL.")
     parser.add_argument("--conf", default=".conf")
     parser.add_argument("--output", required=True)
@@ -39,6 +51,7 @@ def main():
     written = 0
     with out.open("w", encoding="utf-8") as f:
         for row in rows:
+            # The rows API nests dataset columns under the "row" key.
             data = row.get("row", {})
             text = data.get("text")
             if text:
@@ -49,4 +62,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

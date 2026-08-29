@@ -1,3 +1,7 @@
+"""Train ReCal-LM or the matched dense baseline from a YAML config.
+
+中文：根据 YAML 配置训练 ReCal-LM 或匹配的稠密 baseline。"""
+
 import argparse
 import json
 import math
@@ -23,6 +27,10 @@ from recal.training.scheduler import cosine_lr, set_optimizer_lr
 
 
 def parse_count(value: str) -> int:
+    """Parse human-friendly counts such as 500M or 3B into integers.
+
+中文：将 500M、3B 等易读计数解析为整数。"""
+
     text = str(value).strip().replace("_", "").lower()
     multipliers = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}
     if text[-1:] in multipliers:
@@ -31,11 +39,19 @@ def parse_count(value: str) -> int:
 
 
 def load_config(path: str | Path) -> dict:
+    """Load a YAML model/training configuration.
+
+中文：加载 YAML 模型/训练配置。"""
+
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def make_model(config: dict) -> torch.nn.Module:
+    """Instantiate the configured ReCal or baseline language model.
+
+中文：实例化配置指定的 ReCal 或 baseline 语言模型。"""
+
     model_type = config.get("model_type")
     if model_type == "recal":
         return ReCalLM(config)
@@ -45,6 +61,10 @@ def make_model(config: dict) -> torch.nn.Module:
 
 
 def choose_amp_dtype(config: dict, device: torch.device):
+    """Select whether autocast is enabled and which dtype it should use.
+
+中文：选择是否启用 autocast，以及应使用的数据类型。"""
+
     precision = str(config.get("precision", "fp32")).lower()
     if device.type != "cuda":
         return False, torch.float32
@@ -56,6 +76,10 @@ def choose_amp_dtype(config: dict, device: torch.device):
 
 
 def load_best_metadata(path: Path) -> dict:
+    """Read the best-checkpoint sidecar or return an empty best-loss record.
+
+中文：读取 best checkpoint 旁路元数据；不存在时返回空的最佳损失记录。"""
+
     if not path.exists():
         return {"loss": float("inf"), "step": 0, "tokens_seen": 0}
     try:
@@ -66,6 +90,10 @@ def load_best_metadata(path: Path) -> dict:
 
 
 def write_best_metadata(path: Path, metrics: dict) -> None:
+    """Persist the subset of metrics needed to resume best-loss tracking.
+
+中文：持久化恢复最佳损失跟踪所需的指标子集。"""
+
     payload = {
         "step": metrics["step"],
         "loss": metrics["loss"],
@@ -76,6 +104,10 @@ def write_best_metadata(path: Path, metrics: dict) -> None:
 
 
 def mean_metric(value):
+    """Convert optional tensors or numbers into Python floats for JSON logs.
+
+中文：将可选张量或数字转换为 JSON 日志可写的 Python float。"""
+
     if value is None:
         return None
     if torch.is_tensor(value):
@@ -84,6 +116,10 @@ def mean_metric(value):
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line options for one training run.
+
+中文：解析单次训练运行的命令行选项。"""
+
     parser = argparse.ArgumentParser(description="Train ReCal-LM or its matched baseline.")
     parser.add_argument("--config", required=True, help="Path to a YAML config.")
     parser.add_argument("--data", default=None, help="UTF-8 text file. If omitted, uses built-in tiny text.")
@@ -107,6 +143,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run the complete training loop, including logging and checkpoints.
+
+中文：运行完整训练循环，包括日志和 checkpoint。"""
+
     args = parse_args()
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -118,6 +158,7 @@ def main() -> None:
     if seq_len > int(config["context_length"]):
         raise ValueError("seq-len cannot exceed context_length in the config")
 
+    # Model construction happens before device selection so --dry-run reports params cheaply.
     model = make_model(config)
     n_params = count_parameters(model)
     print(f"model={config.get('name', config['model_type'])} params={n_params:,}")
@@ -162,6 +203,7 @@ def main() -> None:
 
     tokens_per_step = args.batch_size * seq_len * args.grad_accum
     if args.target_tokens is not None:
+        # Convert a token budget into a step cap while respecting resumed progress.
         remaining_tokens = max(0, args.target_tokens - tokens_seen)
         target_steps = start_step + math.ceil(remaining_tokens / max(tokens_per_step, 1))
         max_steps = args.steps if args.steps is not None else target_steps
@@ -185,6 +227,10 @@ def main() -> None:
     latest_metrics = None
 
     def save_last(step_value: int) -> None:
+        """Write checkpoint_last.pt with current optimizer and run metadata.
+
+中文：用当前优化器状态和运行元数据写入 checkpoint_last.pt。"""
+
         save_checkpoint(
             output / "checkpoint_last.pt",
             model,
@@ -197,6 +243,10 @@ def main() -> None:
         )
 
     def save_best_if_needed(metrics: dict) -> None:
+        """Update checkpoint_best.pt only when the logged loss improves.
+
+中文：仅在记录的 loss 改善时更新 checkpoint_best.pt。"""
+
         nonlocal best_loss
         if metrics["loss"] < best_loss:
             best_loss = metrics["loss"]
@@ -231,6 +281,7 @@ def main() -> None:
                 tokens_seen += x.numel()
                 run_tokens_seen += x.numel()
 
+            # Optimizer updates are delayed until all accumulation micro-batches finish.
             lr_now = cosine_lr(step, lr, warmup_steps, max_steps)
             set_optimizer_lr(optimizer, lr_now)
             scaler.unscale_(optimizer)
@@ -270,6 +321,7 @@ def main() -> None:
                 save_last(step + 1)
                 save_best_if_needed(metrics)
                 if args.keep_interval_checkpoints:
+                    # Interval snapshots are opt-in; default retention is last plus best.
                     save_checkpoint(
                         output / f"checkpoint_{step + 1}.pt",
                         model,

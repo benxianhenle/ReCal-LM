@@ -1,3 +1,7 @@
+"""ReCal-LM model: full calibration plus recurrent hidden-state updates.
+
+中文：ReCal-LM 模型：完整校准加循环隐藏状态更新。"""
+
 import random
 from typing import Optional
 
@@ -9,7 +13,15 @@ from .layers import RMSNorm, TransformerBlock, TransformerConfig, init_weights
 
 
 class RouterExecutor(nn.Module):
+    """Predicts recurrent loop depth and whether recalibration is needed.
+
+中文：预测循环更新深度，并判断是否需要重新校准。"""
+
     def __init__(self, hidden_size: int, hidden_dim: int, num_loop_choices: int):
+        """Create the small router MLP and its loop/calibration heads.
+
+中文：创建小型 router MLP 及其循环深度/校准判断输出头。"""
+
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(2 * hidden_size, hidden_dim, bias=False),
@@ -21,6 +33,10 @@ class RouterExecutor(nn.Module):
         self.calibration_head = nn.Linear(hidden_dim, 1, bias=False)
 
     def forward(self, state: torch.Tensor) -> dict:
+        """Summarize a sequence state and produce routing probabilities.
+
+中文：汇总序列状态并生成路由概率。"""
+
         summary = torch.cat([state.mean(dim=1), state[:, -1]], dim=-1)
         hidden = self.net(summary)
         loop_logits = self.loop_head(hidden)
@@ -34,7 +50,15 @@ class RouterExecutor(nn.Module):
 
 
 class DriftEstimator(nn.Module):
+    """Predicts state drift between recurrent updates and full calibration.
+
+中文：预测循环更新状态与完整校准状态之间的漂移。"""
+
     def __init__(self, hidden_size: int, hidden_dim: int):
+        """Create the token-level drift predictor MLP.
+
+中文：创建 token 级状态漂移预测 MLP。"""
+
         super().__init__()
         self.net = nn.Sequential(
             RMSNorm(hidden_size),
@@ -45,11 +69,23 @@ class DriftEstimator(nn.Module):
         )
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
+        """Return a bounded drift estimate for each token state.
+
+中文：为每个 token 状态返回有界漂移估计。"""
+
         return self.net(state).squeeze(-1)
 
 
 class ReCalLM(nn.Module):
+    """Language model that trains dense calibration and recurrent reuse together.
+
+中文：同时训练稠密校准和循环复用能力的语言模型。"""
+
     def __init__(self, config: dict):
+        """Construct the front, recurrent, back, router, and drift modules.
+
+中文：构建 front、recurrent、back、router 和 drift 模块。"""
+
         super().__init__()
         self.config = config
         self.loop_choices = [int(item) for item in config.get("loop_choices", [1, 2, 4, 8])]
@@ -85,11 +121,19 @@ class ReCalLM(nn.Module):
         blocks: nn.ModuleList,
         position_ids: Optional[torch.Tensor],
     ) -> torch.Tensor:
+        """Run a list of Transformer blocks with shared position IDs.
+
+中文：使用共享位置 ID 依次运行一组 Transformer 块。"""
+
         for block in blocks:
             x = block(x, position_ids)
         return x
 
     def full_calibration(self, input_ids: torch.Tensor) -> dict:
+        """Run the full front/recurrent/back pass used as the calibration target.
+
+中文：执行完整的 front/recurrent/back 前向过程，作为校准目标。"""
+
         _, seq_len = input_ids.shape
         position_ids = torch.arange(seq_len, device=input_ids.device)
         x = self.drop(self.embed_tokens(input_ids))
@@ -106,23 +150,39 @@ class ReCalLM(nn.Module):
         new_token_ids: torch.Tensor,
         position_ids: torch.Tensor,
     ) -> torch.Tensor:
+        """Advance a cached state with shifted input tokens and recurrent blocks.
+
+中文：用移位后的输入 token 和 recurrent 块推进缓存状态。"""
+
         token_delta = self.state_input(self.embed_tokens(new_token_ids))
         state = self.state_norm(state + token_delta)
         state = self._run_blocks(state, self.recurrent, position_ids)
         return self.state_norm(state)
 
     def decode_from_state(self, state: torch.Tensor, position_ids: torch.Tensor) -> torch.Tensor:
+        """Decode logits from an already calibrated or recurrently updated state.
+
+中文：从已校准或经循环更新的状态中解码 logits。"""
+
         hidden = self._run_blocks(state, self.back, position_ids)
         hidden = self.final_norm(hidden)
         return self.lm_head(hidden)
 
     def _sample_loop_steps(self) -> int:
+        """Sample an exploration loop count from configured choices.
+
+中文：从配置的候选循环次数中采样探索值。"""
+
         probs = self.config.get("loop_probs")
         if probs is None:
             return random.choice(self.loop_choices)
         return random.choices(self.loop_choices, weights=probs, k=1)[0]
 
     def _route_targets(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Build heuristic supervision targets for loop depth and recalibration.
+
+中文：为循环深度和重新校准构造启发式监督目标。"""
+
         if state.size(1) < 2:
             loop_target = torch.zeros(state.size(0), dtype=torch.long, device=state.device)
             calibration_target = torch.zeros(state.size(0), device=state.device)
@@ -141,6 +201,10 @@ class ReCalLM(nn.Module):
         return loop_target, calibration_target
 
     def _select_loop_steps(self, route: dict) -> int:
+        """Choose the recurrent loop count from router output and exploration.
+
+中文：根据 router 输出和探索策略选择循环次数。"""
+
         if self.training and random.random() < float(self.config.get("router_exploration_prob", 0.10)):
             return self._sample_loop_steps()
         if self.training:
@@ -155,6 +219,10 @@ class ReCalLM(nn.Module):
         labels: Optional[torch.Tensor] = None,
         loop_steps: Optional[int] = None,
     ) -> dict:
+        """Compute LM logits/losses and optional recurrent consistency losses.
+
+中文：计算语言模型 logits/损失，以及可选的循环一致性损失。"""
+
         full = self.full_calibration(input_ids)
         logits = full["logits"]
         route = self.router_executor(full["state"].detach())
