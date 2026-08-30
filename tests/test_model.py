@@ -57,6 +57,32 @@ def test_recal_forward_with_loop_losses():
     assert out["drift_target"].ndim == 0
 
 
+def test_recal_full_loss_trains_all_major_modules():
+    """Verify the full ReCal objective reaches every major trainable module."""
+
+    model = ReCalLM(tiny_recal_config())
+    assert all(parameter.requires_grad for parameter in model.parameters())
+
+    x = torch.randint(4, 128, (2, 16))
+    y = torch.randint(4, 128, (2, 16))
+    out = model(x, labels=y, loop_steps=2)
+    out["loss"].backward()
+
+    gradient_checks = {
+        "front_attention": model.front[0].attn.qkv.weight.grad,
+        "recurrent_attention": model.recurrent[0].attn.qkv.weight.grad,
+        "back_attention": model.back[0].attn.qkv.weight.grad,
+        "state_input": model.state_input.weight.grad,
+        "router_loop_head": model.router_executor.loop_head.weight.grad,
+        "router_calibration_head": model.router_executor.calibration_head.weight.grad,
+        "drift_estimator": model.drift_estimator.net[1].weight.grad,
+        "lm_head": model.lm_head.weight.grad,
+    }
+    for name, gradient in gradient_checks.items():
+        assert gradient is not None, name
+        assert torch.isfinite(gradient).all(), name
+
+
 def test_baseline_forward():
     """Verify baseline forward output shapes and scalar LM loss.
 

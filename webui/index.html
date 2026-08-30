@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReCal-LM WebUI</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --ink: #15202b;
+      --muted: #697586;
+      --line: #d8dee9;
+      --panel: #ffffff;
+      --accent: #0f766e;
+      --accent-2: #7c3aed;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --good: #047857;
+      --code: #101828;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcff;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 11px;
+      color: var(--ink);
+      background: #ffffff;
+      font: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+      line-height: 1.55;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 13px;
+      color: #fff;
+      background: var(--accent);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 720;
+      cursor: pointer;
+    }
+
+    button.secondary { background: var(--accent-2); }
+    button.ghost {
+      color: var(--ink);
+      background: #eef2f7;
+    }
+    button:disabled { opacity: 0.55; cursor: wait; }
+
+    .stack { display: grid; gap: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .status.ready { color: var(--good); border-color: rgba(4, 120, 87, 0.25); }
+    .status.error { color: var(--bad); border-color: rgba(185, 28, 28, 0.25); }
+    .status.busy { color: var(--warn); border-color: rgba(180, 83, 9, 0.25); }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 74px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 7px;
+      font-size: 18px;
+      font-weight: 780;
+      overflow-wrap: anywhere;
+    }
+
+    pre {
+      min-height: 220px;
+      max-height: 520px;
+      overflow: auto;
+      margin: 0;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: #e5e7eb;
+      background: var(--code);
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .output {
+      min-height: 140px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcff;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 900px) {
+      header { align-items: flex-start; flex-direction: column; }
+      main { grid-template-columns: 1fr; padding: 12px; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .actions button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ReCal-LM WebUI</h1>
+    <div id="status" class="status">未加载模型</div>
+  </header>
+
+  <main>
+    <div class="stack">
+      <section>
+        <h2>模型</h2>
+        <label>配置路径
+          <input id="config" value="configs/recal_20m.yaml" spellcheck="false">
+        </label>
+        <label>Checkpoint
+          <input id="checkpoint" value="" placeholder="runs/recal_150m_full/checkpoint_best.pt" spellcheck="false">
+        </label>
+        <label>Tokenizer
+          <input id="tokenizer" value="" placeholder="artifacts/tokenizer.json" spellcheck="false">
+        </label>
+        <div class="grid-2">
+          <label>设备
+            <select id="device">
+              <option value="auto">auto</option>
+              <option value="cuda">cuda</option>
+              <option value="cpu">cpu</option>
+            </select>
+          </label>
+          <label>循环步
+            <input id="loopSteps" value="auto" spellcheck="false">
+          </label>
+        </div>
+        <div class="actions">
+          <button id="loadBtn">加载</button>
+          <button id="statusBtn" class="ghost">刷新</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>采样</h2>
+        <div class="grid-2">
+          <label>新 token
+            <input id="maxNew" type="number" min="1" max="128" value="48">
+          </label>
+          <label>Temperature
+            <input id="temperature" type="number" min="0.01" max="4" step="0.01" value="0.80">
+          </label>
+          <label>Top K
+            <input id="topK" type="number" min="0" max="500" value="40">
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section>
+        <h2>输入</h2>
+        <textarea id="prompt" spellcheck="false">ReCal-LM is a recurrent calibration language model.</textarea>
+        <div class="actions">
+          <button id="inspectBtn">检测</button>
+          <button id="generateBtn" class="secondary">生成</button>
+          <button id="clearBtn" class="ghost">清空输出</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>指标</h2>
+        <div class="metric-grid" id="metrics"></div>
+      </section>
+
+      <section>
+        <h2>输出</h2>
+        <div id="generated" class="output"></div>
+      </section>
+
+      <section>
+        <h2>原始结果</h2>
+        <pre id="raw">{}</pre>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+    const rawEl = $("raw");
+    const metricsEl = $("metrics");
+    const generatedEl = $("generated");
+    const buttons = [$("loadBtn"), $("statusBtn"), $("inspectBtn"), $("generateBtn"), $("clearBtn")];
+
+    const metricNames = [
+      ["loss_lm", "LM Loss"],
+      ["perplexity", "PPL"],
+      ["loss_state", "State"],
+      ["loss_kd", "KD"],
+      ["loss_drift", "Drift Loss"],
+      ["drift_pred", "Drift Pred"],
+      ["drift_target", "Drift Target"],
+      ["loss_router", "Router Loss"],
+      ["router_expected_loop_steps", "Expected Loop"],
+      ["router_selected_loop_steps", "Selected Loop"],
+      ["router_calibration_prob", "Calib Prob"],
+      ["tokens", "Tokens"]
+    ];
+
+    function setBusy(text) {
+      statusEl.textContent = text;
+      statusEl.className = "status busy";
+      buttons.forEach((button) => { button.disabled = true; });
+    }
+
+    function setReady(text) {
+      statusEl.textContent = text;
+      statusEl.className = "status ready";
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+
+    function setError(text) {
+      statusEl.textContent = text;
+      statusEl.className = "status error";
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+
+    function payloadBase() {
+      return {
+        text: $("prompt").value,
+        loop_steps: $("loopSteps").value.trim()
+      };
+    }
+
+    async function post(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || response.statusText);
+      }
+      return data;
+    }
+
+    async function get(path) {
+      const response = await fetch(path);
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || response.statusText);
+      }
+      return data;
+    }
+
+    function renderRaw(data) {
+      rawEl.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function fmt(value) {
+      if (value === null || value === undefined) return "-";
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) return String(value);
+        if (Math.abs(value) >= 1000) return value.toFixed(1);
+        if (Math.abs(value) >= 10) return value.toFixed(3);
+        return value.toFixed(5);
+      }
+      return String(value);
+    }
+
+    function renderMetrics(data) {
+      metricsEl.innerHTML = "";
+      metricNames.forEach(([key, label]) => {
+        const node = document.createElement("div");
+        node.className = "metric";
+        node.innerHTML = `<span>${label}</span><strong>${fmt(data[key])}</strong>`;
+        metricsEl.appendChild(node);
+      });
+    }
+
+    async function loadModel() {
+      setBusy("正在加载");
+      try {
+        const data = await post("/api/load", {
+          config: $("config").value.trim(),
+          checkpoint: $("checkpoint").value.trim(),
+          tokenizer: $("tokenizer").value.trim(),
+          device: $("device").value
+        });
+        renderRaw(data);
+        renderMetrics({});
+        setReady(`${data.model} / ${data.device} / step ${data.step}`);
+      } catch (error) {
+        setError(error.message);
+      }
+    }
+
+    async function refreshStatus() {
+      setBusy("正在刷新");
+      try {
+        const data = await get("/api/status");
+        renderRaw(data);
+        if (data.loaded) {
+          setReady(`${data.model} / ${data.device} / step ${data.step}`);
+        } else {
+          statusEl.textContent = "未加载模型";
+          statusEl.className = "status";
+          buttons.forEach((button) => { button.disabled = false; });
+        }
+      } catch (error) {
+        setError(error.message);
+      }
+    }
+
+    async function inspectText() {
+      setBusy("正在检测");
+      try {
+        const data = await post("/api/inspect", payloadBase());
+        renderRaw(data);
+        renderMetrics(data);
+        setReady("检测完成");
+      } catch (error) {
+        setError(error.message);
+      }
+    }
+
+    async function generateText() {
+      setBusy("正在生成");
+      try {
+        const data = await post("/api/generate", {
+          ...payloadBase(),
+          max_new_tokens: Number($("maxNew").value),
+          temperature: Number($("temperature").value),
+          top_k: Number($("topK").value)
+        });
+        generatedEl.textContent = data.new_text || data.text;
+        renderRaw(data);
+        renderMetrics(data.last_step_metrics || {});
+        setReady("生成完成");
+      } catch (error) {
+        setError(error.message);
+      }
+    }
+
+    $("loadBtn").addEventListener("click", loadModel);
+    $("statusBtn").addEventListener("click", refreshStatus);
+    $("inspectBtn").addEventListener("click", inspectText);
+    $("generateBtn").addEventListener("click", generateText);
+    $("clearBtn").addEventListener("click", () => {
+      generatedEl.textContent = "";
+      rawEl.textContent = "{}";
+      renderMetrics({});
+    });
+
+    renderMetrics({});
+    refreshStatus();
+  </script>
+</body>
+</html>

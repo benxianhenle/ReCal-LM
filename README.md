@@ -416,6 +416,122 @@ CPU 一步 smoke 训练：
 
 `.jsonl` 训练数据使用 streaming 方式读取，不会一次性全部加载进内存。
 
+## 完整全参数训练参数说明
+
+完整训练入口是 `scripts/train.py`。它默认训练 ReCal 或 Baseline 的全部参数；如果发现有参数被冻结，会在启动阶段报错。只有明确做局部训练实验时，才使用 `--allow-frozen-params`。
+
+启动时会打印 `trainability` JSON，用来确认每个主要模块是否都参与训练：
+
+- `embed_tokens`：输入 token embedding；当 `tie_embeddings: true` 时也和 `lm_head` 共享权重。
+- `front`：前段 full-calibration Transformer blocks，用于把输入序列编码成初始隐状态。
+- `recurrent`：主循环体 R blocks，用于 recurrent state update。
+- `back`：后段解码 blocks，把 state 转成可预测 token 的 hidden。
+- `state_input`：把新 token embedding 注入旧 state 的更新投影。
+- `state_norm`：recurrent state 的归一化。
+- `final_norm`：输出 logits 前的最终归一化。
+- `lm_head`：语言模型输出头。
+- `router_executor`：预测循环步数和是否需要校准。
+- `drift_estimator`：预测 recurrent state 相对 full-calibration state 的漂移。
+
+常用训练命令：
+
+```powershell
+.\.venv\Scripts\python.exe .\ReCal-LM\scripts\train.py `
+  --config .\ReCal-LM\configs\recal_150m.yaml `
+  --data .\ReCal-LM\data\train.jsonl `
+  --val-data .\ReCal-LM\data\val.jsonl `
+  --tokenizer .\ReCal-LM\artifacts\tokenizer.json `
+  --target-tokens 500M `
+  --seq-len 2048 `
+  --batch-size 1 `
+  --grad-accum 1 `
+  --device cuda `
+  --save-interval 100 `
+  --val-interval 100 `
+  --val-batches 20 `
+  --output .\ReCal-LM\runs\recal_150m_full
+```
+
+参数作用：
+
+| 参数 | 作用 |
+|---|---|
+| `--config` | 选择模型结构和默认训练超参，例如 `configs/recal_150m.yaml`。 |
+| `--data` | 训练文本，支持 UTF-8 `.txt` 或每行含 `text` 字段的 `.jsonl`。 |
+| `--val-data` | 独立验证集；提供后 `checkpoint_best.pt` 按 `val_loss_lm` 选择。 |
+| `--tokenizer` | HuggingFace tokenizers JSON；不提供时使用字节级 fallback tokenizer。 |
+| `--target-tokens` | 按训练 token 数控制停止点，例如 `500M`、`3B`。 |
+| `--steps` | 按 step 数控制训练；如果同时设置 `--target-tokens`，会取更早停止点。 |
+| `--seq-len` | 每条样本上下文长度，不能超过配置里的 `context_length`。 |
+| `--batch-size` | 每个 micro-batch 的样本数。 |
+| `--grad-accum` | 梯度累积步数；有效 tokens/step = `batch-size * seq-len * grad-accum`。 |
+| `--lr` | 覆盖配置里的学习率。 |
+| `--device` | `auto`、`cuda` 或 `cpu`。 |
+| `--resume` | 从 checkpoint 恢复模型、优化器、step 和 `tokens_seen`。 |
+| `--save-interval` | 每隔多少 step 写 `checkpoint_last.pt`。 |
+| `--val-interval` | 每隔多少 step 跑验证；提供 `--val-data` 后默认等于 `--save-interval`。 |
+| `--val-batches` | 每次验证使用多少个 batch。 |
+| `--val-loop` | ReCal 验证时固定循环步数；不设置则使用模型路由选择。 |
+| `--keep-interval-checkpoints` | 额外保留 `checkpoint_步数.pt`；默认只保留 best 和 last。 |
+| `--random-data` | 随机 token smoke 测试，只验证程序路径，不代表模型质量。 |
+| `--compile` | 尝试使用 `torch.compile`。 |
+| `--allow-frozen-params` | 允许部分参数冻结；完整全参训练不要使用。 |
+| `--dry-run` | 只构建模型并输出参数量/可训练覆盖，不进入训练。 |
+
+训练日志指标：
+
+| 指标 | 含义 |
+|---|---|
+| `loss` | 总训练目标，包含 LM loss 和配置权重下的辅助 loss。 |
+| `loss_lm` | 下一 token 预测交叉熵；判断语言建模质量时优先看它。 |
+| `loss_state` | recurrent state 与 full-calibration state 的 cosine 漂移误差。 |
+| `loss_kd` | recurrent logits 向 full-calibration logits 对齐的 KL 蒸馏损失。 |
+| `loss_drift` | DriftEstimator 对真实 state drift 的预测误差。 |
+| `loss_router` | RouterExecutor 的循环步数分类和校准二分类损失。 |
+| `drift_pred` | DriftEstimator 预测的平均漂移。 |
+| `drift_target` | 由 recurrent/full state cosine distance 构造的漂移目标。 |
+| `router_expected_loop_steps` | router 概率分布对应的期望循环步数。 |
+| `router_selected_loop_steps` | 本次 forward 实际使用的循环步数。 |
+| `router_calibration_prob` | router 预测需要 full-calibration 的概率。 |
+| `val_loss_lm` | 验证集 LM loss；有验证集时用于选择 best checkpoint。 |
+| `val_perplexity` | `val_loss_lm` 对应困惑度。 |
+| `tokens_seen` | 从本次 run 或 resume 后累计的训练 token 数。 |
+| `tokens_per_second` | 当前运行吞吐估计。 |
+
+注意：当前 `router_calibration_prob` 和 `drift_pred` 已经参与训练和评估，但还没有接成推理时的强制 full-calibration 闭环。它们现在是可学习信号和诊断指标，不要直接当作已经节省计算量的证据。
+
+## 本地 WebUI 真实检测
+
+WebUI 文件位于 `webui/`，后端会真实加载 PyTorch 模型、checkpoint 和 tokenizer。支持两类操作：
+
+- `检测`：对输入文本计算 LM loss、PPL、漂移、router 指标和下一 token top-k。
+- `生成`：用当前模型 autoregressive 采样生成文本，并返回最后一步 router/drift 指标。
+
+启动：
+
+```powershell
+cd F:\PyTorch_venv\PyTorch\ReCal-LM
+F:\PyTorch_venv\PyTorch\.venv\Scripts\python.exe .\webui\server.py --host 127.0.0.1 --port 7860
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:7860
+```
+
+页面中的路径必须位于项目目录内。常用填写方式：
+
+| 输入框 | 示例 |
+|---|---|
+| 配置路径 | `configs/recal_150m.yaml` |
+| Checkpoint | `runs/recal_150m_full/checkpoint_best.pt` |
+| Tokenizer | `artifacts/tokenizer.json` |
+| 设备 | `auto` 或 `cuda` |
+| 循环步 | `auto`、`1`、`2`、`4`、`8` |
+
+如果不填 checkpoint，页面会加载随机初始化模型，只能用于检查代码路径，不能用于判断模型能力。真实检测请加载训练后的 `checkpoint_best.pt` 或 `checkpoint_last.pt`。
+
 ## License
 
 MIT License。见 `LICENSE`。

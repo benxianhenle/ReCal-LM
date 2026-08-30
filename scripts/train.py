@@ -98,6 +98,9 @@ def write_best_metadata(path: Path, metrics: dict) -> None:
         "step": metrics["step"],
         "loss": metrics["loss"],
         "loss_lm": metrics["loss_lm"],
+        "selection_metric": metrics.get("selection_metric", "loss"),
+        "selection_loss": metrics.get("selection_loss", metrics["loss"]),
+        "val_loss_lm": metrics.get("val_loss_lm"),
         "tokens_seen": metrics["tokens_seen"],
     }
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
@@ -115,6 +118,133 @@ def mean_metric(value):
     return float(value)
 
 
+def unique_parameter_counts(module: torch.nn.Module) -> dict:
+    """Count unique parameters in a module, split by trainability."""
+
+    seen: set[int] = set()
+    total = 0
+    trainable = 0
+    for parameter in module.parameters():
+        ident = id(parameter)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        n_values = parameter.numel()
+        total += n_values
+        if parameter.requires_grad:
+            trainable += n_values
+    return {
+        "total": total,
+        "trainable": trainable,
+        "frozen": total - trainable,
+    }
+
+
+def module_trainability_summary(model: torch.nn.Module) -> dict:
+    """Report whole-model and major-module parameter coverage."""
+
+    model_counts = unique_parameter_counts(model)
+    module_names = [
+        "embed_tokens",
+        "front",
+        "recurrent",
+        "back",
+        "state_input",
+        "state_norm",
+        "final_norm",
+        "lm_head",
+        "router_executor",
+        "drift_estimator",
+        "blocks",
+    ]
+    modules = {}
+    for name in module_names:
+        module = getattr(model, name, None)
+        if module is not None:
+            modules[name] = unique_parameter_counts(module)
+    return {
+        **model_counts,
+        "all_parameters_trainable": model_counts["frozen"] == 0,
+        "modules": modules,
+    }
+
+
+def make_dataset(tokenizer, vocab_size: int, seq_len: int, data_path: str | None, random_data: bool, repeat_jsonl: bool):
+    """Create the project dataset matching the requested source."""
+
+    if random_data:
+        return RandomTokenDataset(vocab_size, seq_len, size=4096)
+    if data_path and Path(data_path).suffix.lower() == ".jsonl":
+        return StreamingJsonlDataset(tokenizer, seq_len, data_path, repeat=repeat_jsonl)
+    return PackedTextDataset(tokenizer, seq_len, text_path=data_path)
+
+
+def make_loader(dataset, batch_size: int):
+    """Create a DataLoader with shuffle disabled for iterable streams."""
+
+    is_iterable = isinstance(dataset, IterableDataset)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=not is_iterable, drop_last=True)
+
+
+def validation_metrics(
+    model: torch.nn.Module,
+    loader,
+    config: dict,
+    device: torch.device,
+    amp_enabled: bool,
+    amp_dtype,
+    max_batches: int,
+    loop_steps: int | None,
+) -> dict:
+    """Run bounded held-out validation and return LM-first metrics."""
+
+    was_training = model.training
+    model.eval()
+    losses = []
+    state_losses = []
+    kd_losses = []
+    drift_losses = []
+    router_expected_loops = []
+    router_calibration_probs = []
+    with torch.no_grad():
+        for idx, (x, y) in enumerate(loader):
+            if idx >= max_batches:
+                break
+            x = x.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
+                if config.get("model_type") == "recal":
+                    out = model(x, labels=y, loop_steps=loop_steps)
+                else:
+                    out = model(x, labels=y)
+            lm_loss = out.get("loss_lm") if out.get("loss_lm") is not None else out["loss"]
+            losses.append(float(lm_loss.detach().cpu()))
+            if out.get("loss_state") is not None:
+                state_losses.append(float(out["loss_state"].detach().cpu()))
+            if out.get("loss_kd") is not None:
+                kd_losses.append(float(out["loss_kd"].detach().cpu()))
+            if out.get("loss_drift") is not None:
+                drift_losses.append(mean_metric(out.get("loss_drift")))
+            if out.get("router_expected_loop_steps") is not None:
+                router_expected_loops.append(mean_metric(out.get("router_expected_loop_steps")))
+            if out.get("router_calibration_prob") is not None:
+                router_calibration_probs.append(mean_metric(out.get("router_calibration_prob")))
+    if was_training:
+        model.train()
+    if not losses:
+        raise ValueError("Validation produced no batches; check --val-data, --seq-len, and --batch-size.")
+    val_loss = sum(losses) / len(losses)
+    return {
+        "val_loss_lm": val_loss,
+        "val_perplexity": float(torch.exp(torch.tensor(val_loss))),
+        "val_loss_state": sum(state_losses) / len(state_losses) if state_losses else None,
+        "val_loss_kd": sum(kd_losses) / len(kd_losses) if kd_losses else None,
+        "val_loss_drift": sum(drift_losses) / len(drift_losses) if drift_losses else None,
+        "val_router_expected_loop_steps": sum(router_expected_loops) / len(router_expected_loops) if router_expected_loops else None,
+        "val_router_calibration_prob": sum(router_calibration_probs) / len(router_calibration_probs) if router_calibration_probs else None,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line options for one training run.
 
@@ -123,6 +253,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train ReCal-LM or its matched baseline.")
     parser.add_argument("--config", required=True, help="Path to a YAML config.")
     parser.add_argument("--data", default=None, help="UTF-8 text file. If omitted, uses built-in tiny text.")
+    parser.add_argument("--val-data", default=None, help="Optional held-out UTF-8 text or JSONL validation data.")
     parser.add_argument("--tokenizer", default=None, help="Optional HuggingFace tokenizers JSON.")
     parser.add_argument("--output", default="runs/debug", help="Run output directory.")
     parser.add_argument("--steps", type=int, default=None, help="Training steps override.")
@@ -134,10 +265,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     parser.add_argument("--resume", default=None, help="Checkpoint path.")
     parser.add_argument("--save-interval", type=int, default=100)
+    parser.add_argument("--val-interval", type=int, default=0, help="Run validation every N steps; defaults to save interval when --val-data is set.")
+    parser.add_argument("--val-batches", type=int, default=10)
+    parser.add_argument("--val-loop", type=int, default=None, help="Fixed ReCal loop count during validation.")
     parser.add_argument("--keep-interval-checkpoints", action="store_true")
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--random-data", action="store_true", help="Use random token IDs for pure speed tests.")
     parser.add_argument("--compile", action="store_true", help="Use torch.compile when available.")
+    parser.add_argument("--allow-frozen-params", action="store_true", help="Allow training even if some parameters are frozen.")
     parser.add_argument("--dry-run", action="store_true", help="Build the model, print parameter count, and exit.")
     return parser.parse_args()
 
@@ -162,6 +297,13 @@ def main() -> None:
     model = make_model(config)
     n_params = count_parameters(model)
     print(f"model={config.get('name', config['model_type'])} params={n_params:,}")
+    trainability = module_trainability_summary(model)
+    print(json.dumps({"trainability": trainability}, ensure_ascii=True))
+    if trainability["frozen"] and not args.allow_frozen_params:
+        raise RuntimeError(
+            "Some model parameters are frozen. train.py is intended for full-parameter training; "
+            "pass --allow-frozen-params only for an intentional partial-training run."
+        )
     if args.dry_run:
         return
 
@@ -177,15 +319,18 @@ def main() -> None:
     tokenizer = load_tokenizer(args.tokenizer)
     if getattr(tokenizer, "vocab_size", 0) > config["vocab_size"]:
         raise ValueError("Tokenizer vocab is larger than model vocab_size")
-    if args.random_data:
-        dataset = RandomTokenDataset(config["vocab_size"], seq_len, size=4096)
-    elif args.data and Path(args.data).suffix.lower() == ".jsonl":
-        dataset = StreamingJsonlDataset(tokenizer, seq_len, args.data, repeat=True)
-    else:
-        dataset = PackedTextDataset(tokenizer, seq_len, text_path=args.data)
-    is_iterable = isinstance(dataset, IterableDataset)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=not is_iterable, drop_last=True)
+    dataset = make_dataset(tokenizer, int(config["vocab_size"]), seq_len, args.data, args.random_data, repeat_jsonl=True)
+    loader = make_loader(dataset, args.batch_size)
     data_iter = iter(loader)
+    val_interval = args.val_interval
+    val_loader = None
+    if args.val_data:
+        if val_interval <= 0:
+            val_interval = args.save_interval
+        val_dataset = make_dataset(tokenizer, int(config["vocab_size"]), seq_len, args.val_data, False, repeat_jsonl=False)
+        val_loader = make_loader(val_dataset, args.batch_size)
+    elif val_interval > 0:
+        raise ValueError("--val-interval requires --val-data")
 
     lr = args.lr or float(train_cfg.get("learning_rate", 3e-4))
     betas = tuple(train_cfg.get("betas", [0.9, 0.95]))
@@ -216,7 +361,7 @@ def main() -> None:
     metrics_path = output / "metrics.jsonl"
     best_meta_path = output / "checkpoint_best.json"
     best_metadata = load_best_metadata(best_meta_path)
-    best_loss = float(best_metadata.get("loss", float("inf")))
+    best_loss = float(best_metadata.get("selection_loss", best_metadata.get("loss", float("inf"))))
     scaler = torch.amp.GradScaler("cuda", enabled=(amp_enabled and amp_dtype == torch.float16))
 
     model.train()
@@ -248,8 +393,12 @@ def main() -> None:
 中文：仅在记录的 loss 改善时更新 checkpoint_best.pt。"""
 
         nonlocal best_loss
-        if metrics["loss"] < best_loss:
-            best_loss = metrics["loss"]
+        selection_metric = "val_loss_lm" if metrics.get("val_loss_lm") is not None else "loss"
+        selection_loss = float(metrics[selection_metric])
+        metrics["selection_metric"] = selection_metric
+        metrics["selection_loss"] = selection_loss
+        if selection_loss < best_loss:
+            best_loss = selection_loss
             save_checkpoint(
                 output / "checkpoint_best.pt",
                 model,
@@ -259,6 +408,7 @@ def main() -> None:
                 tokens_seen=tokens_seen,
                 seed=args.seed,
                 best_loss=best_loss,
+                selection_metric=selection_metric,
             )
             write_best_metadata(best_meta_path, metrics)
 
@@ -311,6 +461,21 @@ def main() -> None:
                 "target_tokens": args.target_tokens,
                 "tokens_per_second": run_tokens_seen / elapsed,
             }
+            ran_validation = False
+            if val_loader is not None and (step + 1) % val_interval == 0:
+                metrics.update(
+                    validation_metrics(
+                        model,
+                        val_loader,
+                        config,
+                        device,
+                        amp_enabled,
+                        amp_dtype,
+                        args.val_batches,
+                        args.val_loop,
+                    )
+                )
+                ran_validation = True
             current_step = step + 1
             latest_metrics = metrics
             print(json.dumps(metrics, ensure_ascii=True))
@@ -319,7 +484,8 @@ def main() -> None:
 
             if (step + 1) % args.save_interval == 0:
                 save_last(step + 1)
-                save_best_if_needed(metrics)
+                if val_loader is None or ran_validation:
+                    save_best_if_needed(metrics)
                 if args.keep_interval_checkpoints:
                     # Interval snapshots are opt-in; default retention is last plus best.
                     save_checkpoint(
@@ -332,16 +498,18 @@ def main() -> None:
                         seed=args.seed,
                         best_loss=best_loss,
                     )
+            elif ran_validation:
+                save_best_if_needed(metrics)
     except KeyboardInterrupt:
         if current_step > start_step:
             save_last(current_step)
-            if latest_metrics is not None:
+            if latest_metrics is not None and (val_loader is None or latest_metrics.get("val_loss_lm") is not None):
                 save_best_if_needed(latest_metrics)
             print(f"Interrupted; saved checkpoint_last.pt at step {current_step}", flush=True)
         raise
 
     save_last(max_steps)
-    if latest_metrics is not None:
+    if latest_metrics is not None and (val_loader is None or latest_metrics.get("val_loss_lm") is not None):
         save_best_if_needed(latest_metrics)
 
 
