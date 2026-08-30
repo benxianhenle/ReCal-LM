@@ -337,6 +337,7 @@ CPU 一步 smoke 训练：
 - `loss_state`
 - `loss_kd`
 - `loss_drift`
+- `loss_consistency`
 - `loss_router`
 - `drift_pred`
 - `drift_target`
@@ -484,12 +485,13 @@ CPU 一步 smoke 训练：
 |---|---|
 | `loss` | 总训练目标，包含 LM loss 和配置权重下的辅助 loss。 |
 | `loss_lm` | 下一 token 预测交叉熵；判断语言建模质量时优先看它。 |
-| `loss_state` | recurrent state 与 full-calibration state 的 cosine 漂移误差。 |
-| `loss_kd` | recurrent logits 向 full-calibration logits 对齐的 KL 蒸馏损失。 |
-| `loss_drift` | DriftEstimator 对真实 state drift 的预测误差。 |
+| `loss_state` | recurrent state 向 detached EMA teacher state 对齐的 cosine + normalized-MSE 损失。 |
+| `loss_kd` | recurrent logits 向 EMA teacher state 解码出的 logits 对齐的温度 KL 蒸馏损失。 |
+| `loss_drift` | DriftEstimator 对 EMA 平滑 drift accumulator 的预测误差。 |
+| `loss_consistency` | R state 与 Student attention state 解码分布之间的功能一致性 KL。 |
 | `loss_router` | RouterExecutor 的循环步数分类和校准二分类损失。 |
 | `drift_pred` | DriftEstimator 预测的平均漂移。 |
-| `drift_target` | 由 recurrent/full state cosine distance 构造的漂移目标。 |
+| `drift_target` | 由 recurrent/EMA-teacher state cosine distance 构造并平滑后的漂移目标。 |
 | `router_expected_loop_steps` | router 概率分布对应的期望循环步数。 |
 | `router_selected_loop_steps` | 本次 forward 实际使用的循环步数。 |
 | `router_calibration_prob` | router 预测需要 full-calibration 的概率。 |
@@ -499,6 +501,84 @@ CPU 一步 smoke 训练：
 | `tokens_per_second` | 当前运行吞吐估计。 |
 
 注意：当前 `router_calibration_prob` 和 `drift_pred` 已经参与训练和评估，但还没有接成推理时的强制 full-calibration 闭环。它们现在是可学习信号和诊断指标，不要直接当作已经节省计算量的证据。
+
+## EMA Attention Teacher 与四阶段训练
+
+当前 ReCal 的训练路径明确拆成两种注意力角色：
+
+```text
+训练梯度：Input -> Student attention (front) -> R recurrent -> Decoder -> CE
+监督目标：Input -> EMA Teacher attention -> stop-gradient -> state / logit / drift targets
+```
+
+`teacher_embed_tokens`、`teacher_front` 与 `teacher_state_norm` 是 Student 对应模块的 EMA 副本。它们 `requires_grad=False`，始终处于 `eval()`，不会被 CE、KD、state、drift 或 router loss 反向更新。每一次成功的 `optimizer.step()` 后才执行：
+
+```text
+theta_teacher = ema_decay * theta_teacher + (1 - ema_decay) * theta_student
+```
+
+这样 Student attention 仍会从 CE 中学习，而 R 不会追逐一个由同一 loss 实时拖动的监督目标。EMA teacher 仅用于训练；WebUI 和部署模型会关闭它，因此推理不保留第二份 attention 参数。训练 checkpoint 会保留 teacher，以便恢复训练时延续相同的监督坐标系；旧 checkpoint 缺少 teacher 权重时会自动由已加载的 Student attention 初始化。
+
+配置中的关键项：
+
+| 配置项 | 作用 |
+|---|---|
+| `ema_teacher` | 训练时启用 EMA teacher；ReCal 全训练应保持 `true`。 |
+| `ema_decay` | teacher 平滑系数。20M 默认 `0.999`，150M 默认 `0.9995`。 |
+| `teacher_target_layers` | 从 teacher `front` 的哪些层提取目标；不同 R step 会由浅到深对齐这些状态。 |
+| `state_mse_weight` | 在 cosine state loss 外加入 normalized-MSE 的权重，避免 hidden 幅值漂移主导训练。 |
+| `kd_temperature` | logit KD 温度；实现使用 `T^2 * KL(softmax(z_T/T) || softmax(z_R/T))`。 |
+| `lambda_consistency` | R 输出与 Student attention 输出的功能一致性 KL 权重；使用较小值，避免把 R 压成恒等映射。 |
+| `drift_accumulator_decay` | 漂移累积 EMA 的衰减系数。DriftEstimator 学习该平滑目标，router 使用其 detach 后的值生成循环/校准标签。 |
+
+完整训练目标为：
+
+```text
+L = L_CE
+  + lambda_state * L_state(cosine + normalized MSE)
+  + lambda_kd * L_KD(EMA teacher logits)
+  + lambda_drift * L_drift(accumulated drift)
+  + lambda_consistency * L_consistency(Student-attention logits, R logits)
+  + lambda_router * L_router
+```
+
+其中所有 teacher state 和 teacher logit 都在构造目标时 `detach`。因此 KD、state 和 drift 的梯度只流向 Student attention/R/decoder/controller，不会流入 EMA teacher。
+
+建议不要直接用 3B token 从零开始联合训练。使用同一份 train/val 数据，按以下阶段分开运行；每个阶段都应以 `val_loss_lm` 选择 checkpoint，而不是按总 `loss` 选择：
+
+| 阶段 | 命令参数 | Student attention (`front`) | R/Decoder/Router/Drift | Teacher |
+|---|---|---|---|---|
+| Stage 1 | `--stage stage1` | 冻结 | 正常训练 | 固定初始 teacher，不做 EMA 更新 |
+| Stage 2 | `--stage stage2` | 小 LR，默认 `0.10 * LR_R` | 正常训练 | EMA 更新 |
+| Stage 3 | `--stage stage3` | 正常 LR | 正常训练 | EMA 更新 |
+| Stage 4 | `--stage stage4` | 联合训练 | 联合训练，并观察路由/漂移分布 | EMA 更新 |
+
+`tie_embeddings: true` 时 `embed_tokens` 同时也是 `lm_head`；为避免冻结 decoder 输出头，Stage 1 只冻结 `front`，共享 embedding 仍属于 decoder 主训练组。这是有意的权重共享边界。
+
+示例：先做有验证集的 Stage 1，再从其 last checkpoint 进入 Stage 2：
+
+```powershell
+.\.venv\Scripts\python.exe .\ReCal-LM\scripts\train.py `
+  --config .\ReCal-LM\configs\recal_150m.yaml `
+  --data .\ReCal-LM\data\train.jsonl `
+  --val-data .\ReCal-LM\data\val.jsonl `
+  --tokenizer .\ReCal-LM\artifacts\tokenizer.json `
+  --target-tokens 500M --seq-len 2048 --batch-size 1 --grad-accum 1 `
+  --stage stage1 --device cuda --save-interval 100 --val-interval 100 `
+  --output .\ReCal-LM\runs\recal_150m_stage1
+
+.\.venv\Scripts\python.exe .\ReCal-LM\scripts\train.py `
+  --config .\ReCal-LM\configs\recal_150m.yaml `
+  --data .\ReCal-LM\data\train.jsonl `
+  --val-data .\ReCal-LM\data\val.jsonl `
+  --tokenizer .\ReCal-LM\artifacts\tokenizer.json `
+  --target-tokens 500M --seq-len 2048 --batch-size 1 --grad-accum 1 `
+  --stage stage2 --resume .\ReCal-LM\runs\recal_150m_stage1\checkpoint_last.pt `
+  --device cuda --save-interval 100 --val-interval 100 `
+  --output .\ReCal-LM\runs\recal_150m_stage2
+```
+
+切换 Stage 会改变 optimizer 参数组：恢复时模型和 teacher 权重会加载；如果旧 optimizer 参数组不匹配，脚本会明确提示并从新的 optimizer 状态继续。日志新增 `loss_consistency`、`attention_lr`、`stage` 和 `ema_decay`。`loss_state`、`loss_kd`、`drift_target` 的含义也已改为相对 EMA teacher 的监督，不再是 Student 自己的 full-calibration 输出。
 
 ## 本地 WebUI 真实检测
 

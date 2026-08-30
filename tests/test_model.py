@@ -33,6 +33,10 @@ def tiny_recal_config():
         "lambda_kd": 0.5,
         "lambda_drift": 0.05,
         "lambda_router": 0.01,
+        "lambda_consistency": 0.05,
+        "ema_teacher": True,
+        "ema_decay": 0.9,
+        "teacher_target_layers": [1],
     }
 
 
@@ -50,6 +54,7 @@ def test_recal_forward_with_loop_losses():
     assert out["loss_state"].ndim == 0
     assert out["loss_kd"].ndim == 0
     assert out["loss_drift"].ndim == 0
+    assert out["loss_consistency"].ndim == 0
     assert out["loss_router"].ndim == 0
     assert out["router_loop_probs"].shape == (2, 2)
     assert out["router_selected_loop_steps"] in {1, 2}
@@ -61,7 +66,8 @@ def test_recal_full_loss_trains_all_major_modules():
     """Verify the full ReCal objective reaches every major trainable module."""
 
     model = ReCalLM(tiny_recal_config())
-    assert all(parameter.requires_grad for parameter in model.parameters())
+    assert all(parameter.requires_grad for name, parameter in model.named_parameters() if not name.startswith("teacher_"))
+    assert all(not parameter.requires_grad for name, parameter in model.named_parameters() if name.startswith("teacher_"))
 
     x = torch.randint(4, 128, (2, 16))
     y = torch.randint(4, 128, (2, 16))
@@ -81,6 +87,20 @@ def test_recal_full_loss_trains_all_major_modules():
     for name, gradient in gradient_checks.items():
         assert gradient is not None, name
         assert torch.isfinite(gradient).all(), name
+    assert all(parameter.grad is None for name, parameter in model.named_parameters() if name.startswith("teacher_"))
+
+
+def test_ema_teacher_tracks_attention_without_receiving_gradients():
+    """Verify EMA teacher is detached and changes only through explicit updates."""
+
+    model = ReCalLM(tiny_recal_config())
+    before = model.teacher_front[0].attn.qkv.weight.detach().clone()
+    with torch.no_grad():
+        model.front[0].attn.qkv.weight.add_(0.5)
+    model.update_ema_teacher(0.5)
+    after = model.teacher_front[0].attn.qkv.weight.detach()
+    expected = 0.5 * before + 0.5 * model.front[0].attn.qkv.weight.detach()
+    assert torch.allclose(after, expected)
 
 
 def test_baseline_forward():

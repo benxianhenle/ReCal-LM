@@ -30,9 +30,23 @@ def load_checkpoint(path: str | Path, model, optimizer=None, map_location="cpu",
 中文：加载模型权重，可选恢复优化器状态，并返回训练步数。"""
 
     ckpt = torch.load(path, map_location=map_location)
-    model.load_state_dict(ckpt["model"])
+    state = ckpt["model"]
+    try:
+        model.load_state_dict(state)
+    except RuntimeError:
+        # Pre-EMA checkpoints have no teacher_* tensors. Restore the student and seed teacher from it.
+        incompatible = model.load_state_dict(state, strict=False)
+        missing = [key for key in incompatible.missing_keys if not key.startswith("teacher_")]
+        unexpected = [key for key in incompatible.unexpected_keys if not key.startswith("teacher_")]
+        if missing or unexpected:
+            raise RuntimeError(f"Checkpoint is incompatible; missing={missing}, unexpected={unexpected}")
+        if hasattr(model, "initialize_ema_teacher"):
+            model.initialize_ema_teacher()
     if optimizer is not None and ckpt.get("optimizer") is not None:
-        optimizer.load_state_dict(ckpt["optimizer"])
+        try:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        except ValueError as exc:
+            print(f"Optimizer state was not restored ({exc}); continuing with a fresh optimizer state.")
     step = int(ckpt.get("step", 0))
     if return_metadata:
         return step, ckpt

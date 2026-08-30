@@ -23,6 +23,14 @@ lambda_state: 0.1
 lambda_kd: 0.5
 lambda_drift: 0.05
 lambda_router: 0.01
+lambda_consistency: 0.05
+state_mse_weight: 0.25
+kd_temperature: 2.0
+consistency_temperature: 1.0
+ema_teacher: true
+ema_decay: 0.999
+drift_accumulator_decay: 0.90
+teacher_target_layers: [1, 2]
 precision: fp16
 
 training:
@@ -31,3 +39,4 @@ training:
   betas: [0.9, 0.95]
   warmup_steps: 10
   max_steps: 100
+  attention_lr_scale: 0.10

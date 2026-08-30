@@ -23,7 +23,7 @@ from recal.data.tokenizer import load_tokenizer
 from recal.model import BaselineLM, ReCalLM
 from recal.model.layers import count_parameters
 from recal.training.checkpoint import load_checkpoint, save_checkpoint
-from recal.training.scheduler import cosine_lr, set_optimizer_lr
+from recal.training.scheduler import cosine_lr
 
 
 def parse_count(value: str) -> int:
@@ -141,9 +141,26 @@ def unique_parameter_counts(module: torch.nn.Module) -> dict:
 
 
 def module_trainability_summary(model: torch.nn.Module) -> dict:
-    """Report whole-model and major-module parameter coverage."""
+    """Report student coverage separately from frozen EMA-teacher tensors.
 
-    model_counts = unique_parameter_counts(model)
+    Chinese: 将 student 的可训练覆盖率与训练期 EMA teacher 参数分开统计。
+    """
+
+    student_seen: set[int] = set()
+    teacher_seen: set[int] = set()
+    student_total = student_trainable = teacher_total = 0
+    for name, parameter in model.named_parameters():
+        seen = teacher_seen if name.startswith("teacher_") else student_seen
+        ident = id(parameter)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        if name.startswith("teacher_"):
+            teacher_total += parameter.numel()
+        else:
+            student_total += parameter.numel()
+            if parameter.requires_grad:
+                student_trainable += parameter.numel()
     module_names = [
         "embed_tokens",
         "front",
@@ -163,10 +180,64 @@ def module_trainability_summary(model: torch.nn.Module) -> dict:
         if module is not None:
             modules[name] = unique_parameter_counts(module)
     return {
-        **model_counts,
-        "all_parameters_trainable": model_counts["frozen"] == 0,
+        "total": student_total,
+        "trainable": student_trainable,
+        "frozen": student_total - student_trainable,
+        "all_parameters_trainable": student_total == student_trainable,
+        "ema_teacher_total": teacher_total,
+        "ema_teacher_trainable": 0,
         "modules": modules,
     }
+
+
+def configure_recal_stage(model: torch.nn.Module, stage: str) -> float:
+    """Apply the requested attention-training stage and return its LR scale.
+
+    Chinese: 配置 attention 的 Stage 1-4 训练状态，并返回其相对学习率倍率。
+    """
+
+    if not isinstance(model, ReCalLM):
+        return 1.0
+    for parameter in model.front.parameters():
+        parameter.requires_grad_(stage != "stage1")
+    if stage == "stage1":
+        return 0.0
+    if stage == "stage2":
+        return float(model.config.get("training", {}).get("attention_lr_scale", 0.10))
+    return 1.0
+
+
+def optimizer_for_model(model: torch.nn.Module, lr: float, betas: tuple, weight_decay: float, attention_lr_scale: float):
+    """Create AdamW groups so attention can move slower than R and decoder.
+
+    Chinese: 创建带独立 attention 学习率倍率的 AdamW 参数组；EMA teacher 不进入优化器。
+    """
+
+    attention_ids = {id(parameter) for parameter in model.front.parameters()} if hasattr(model, "front") else set()
+    attention_params = []
+    other_params = []
+    seen: set[int] = set()
+    for parameter in model.parameters():
+        if not parameter.requires_grad or id(parameter) in seen:
+            continue
+        seen.add(id(parameter))
+        (attention_params if id(parameter) in attention_ids else other_params).append(parameter)
+    groups = []
+    if other_params:
+        groups.append({"params": other_params, "lr": lr, "lr_scale": 1.0, "name": "student_core"})
+    if attention_params:
+        groups.append({"params": attention_params, "lr": lr * attention_lr_scale, "lr_scale": attention_lr_scale, "name": "student_attention"})
+    return torch.optim.AdamW(groups, lr=lr, betas=betas, weight_decay=weight_decay)
+
+
+def set_optimizer_group_lrs(optimizer, base_lr: float) -> None:
+    """Apply the scheduled base LR while preserving each group multiplier.
+
+    Chinese: 应用调度后的基础学习率，同时保留 attention 的相对学习率倍率。
+    """
+
+    for group in optimizer.param_groups:
+        group["lr"] = base_lr * float(group.get("lr_scale", 1.0))
 
 
 def make_dataset(tokenizer, vocab_size: int, seq_len: int, data_path: str | None, random_data: bool, repeat_jsonl: bool):
@@ -262,6 +333,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--stage", choices=["full", "stage1", "stage2", "stage3", "stage4"], default="full")
+    parser.add_argument("--ema-decay", type=float, default=None, help="EMA decay override for the training-only attention teacher.")
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     parser.add_argument("--resume", default=None, help="Checkpoint path.")
     parser.add_argument("--save-interval", type=int, default=100)
@@ -295,11 +368,12 @@ def main() -> None:
 
     # Model construction happens before device selection so --dry-run reports params cheaply.
     model = make_model(config)
+    attention_lr_scale = configure_recal_stage(model, args.stage)
     n_params = count_parameters(model)
     print(f"model={config.get('name', config['model_type'])} params={n_params:,}")
     trainability = module_trainability_summary(model)
     print(json.dumps({"trainability": trainability}, ensure_ascii=True))
-    if trainability["frozen"] and not args.allow_frozen_params:
+    if trainability["frozen"] and args.stage == "full" and not args.allow_frozen_params:
         raise RuntimeError(
             "Some model parameters are frozen. train.py is intended for full-parameter training; "
             "pass --allow-frozen-params only for an intentional partial-training run."
@@ -313,6 +387,7 @@ def main() -> None:
         device = torch.device(args.device)
     amp_enabled, amp_dtype = choose_amp_dtype(config, device)
     model.to(device)
+    ema_model = model
     if args.compile:
         model = torch.compile(model)
 
@@ -334,12 +409,14 @@ def main() -> None:
 
     lr = args.lr or float(train_cfg.get("learning_rate", 3e-4))
     betas = tuple(train_cfg.get("betas", [0.9, 0.95]))
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=lr,
-        betas=betas,
-        weight_decay=float(train_cfg.get("weight_decay", 0.1)),
+    optimizer = optimizer_for_model(
+        model,
+        lr,
+        betas,
+        float(train_cfg.get("weight_decay", 0.1)),
+        attention_lr_scale,
     )
+    ema_decay = args.ema_decay if args.ema_decay is not None else float(config.get("ema_decay", 0.999))
     start_step = 0
     tokens_seen = 0
     if args.resume:
@@ -433,11 +510,13 @@ def main() -> None:
 
             # Optimizer updates are delayed until all accumulation micro-batches finish.
             lr_now = cosine_lr(step, lr, warmup_steps, max_steps)
-            set_optimizer_lr(optimizer, lr_now)
+            set_optimizer_group_lrs(optimizer, lr_now)
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
+            if isinstance(ema_model, ReCalLM) and args.stage != "stage1":
+                ema_model.update_ema_teacher(ema_decay)
             optimizer.zero_grad(set_to_none=True)
 
             elapsed = max(time.perf_counter() - t0, 1e-6)
@@ -450,6 +529,7 @@ def main() -> None:
                 "loss_state": float(last["loss_state"].detach().cpu()) if last.get("loss_state") is not None else None,
                 "loss_kd": float(last["loss_kd"].detach().cpu()) if last.get("loss_kd") is not None else None,
                 "loss_drift": mean_metric(last.get("loss_drift")),
+                "loss_consistency": mean_metric(last.get("loss_consistency")),
                 "loss_router": mean_metric(last.get("loss_router")),
                 "drift_pred": mean_metric(last.get("drift_pred")),
                 "drift_target": mean_metric(last.get("drift_target")),
@@ -457,6 +537,9 @@ def main() -> None:
                 "router_selected_loop_steps": last.get("router_selected_loop_steps"),
                 "router_calibration_prob": mean_metric(last.get("router_calibration_prob")),
                 "lr": lr_now,
+                "attention_lr": lr_now * attention_lr_scale,
+                "stage": args.stage,
+                "ema_decay": ema_decay if isinstance(ema_model, ReCalLM) and args.stage != "stage1" else None,
                 "tokens_seen": tokens_seen,
                 "target_tokens": args.target_tokens,
                 "tokens_per_second": run_tokens_seen / elapsed,

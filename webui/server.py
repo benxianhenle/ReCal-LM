@@ -51,7 +51,10 @@ class ModelSession:
 
         model_type = config.get("model_type")
         if model_type == "recal":
-            model: torch.nn.Module = ReCalLM(config)
+            # EMA teacher is a training-only module; WebUI runs the deployable student model.
+            model_config = dict(config)
+            model_config["ema_teacher"] = False
+            model: torch.nn.Module = ReCalLM(model_config)
         elif model_type == "baseline":
             model = BaselineLM(config)
         else:
@@ -146,6 +149,7 @@ class ModelSession:
             "loss_state": scalar(out.get("loss_state")),
             "loss_kd": scalar(out.get("loss_kd")),
             "loss_drift": scalar(out.get("loss_drift")),
+            "loss_consistency": scalar(out.get("loss_consistency")),
             "loss_router": scalar(out.get("loss_router")),
             "drift_pred": scalar(out.get("drift_pred")),
             "drift_target": scalar(out.get("drift_target")),

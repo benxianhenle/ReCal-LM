@@ -63,6 +63,7 @@ def main():
     state_losses = []
     kd_losses = []
     drift_losses = []
+    consistency_losses = []
     drift_preds = []
     drift_targets = []
     router_expected_loops = []
@@ -83,6 +84,8 @@ def main():
                 kd_losses.append(float(out["loss_kd"].cpu()))
             if out.get("loss_drift") is not None:
                 drift_losses.append(float(out["loss_drift"].cpu()))
+            if out.get("loss_consistency") is not None:
+                consistency_losses.append(float(out["loss_consistency"].cpu()))
             if out.get("drift_pred") is not None:
                 drift_preds.append(float(out["drift_pred"].cpu()))
             if out.get("drift_target") is not None:
@@ -98,6 +101,7 @@ def main():
         "state_error": sum(state_losses) / len(state_losses) if state_losses else None,
         "kd": sum(kd_losses) / len(kd_losses) if kd_losses else None,
         "drift_loss": sum(drift_losses) / len(drift_losses) if drift_losses else None,
+        "consistency_loss": sum(consistency_losses) / len(consistency_losses) if consistency_losses else None,
         "drift_pred": sum(drift_preds) / len(drift_preds) if drift_preds else None,
         "drift_target": sum(drift_targets) / len(drift_targets) if drift_targets else None,
         "router_expected_loop_steps": sum(router_expected_loops) / len(router_expected_loops) if router_expected_loops else None,
