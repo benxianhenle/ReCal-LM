@@ -1,3 +1,5 @@
+> 长期设计蓝图。2026-09-17 的真实语言模型主线采用同步 R1/R2/R3、多深度 CE 和 A-final warm-start；token 异步深度已暂停，block refresh 尚待阶段验证。实现状态见 [README](../README.md) 与 [V3 说明](../docs/v3-training.md)。
+
 # 模块化循环认知架构
 ## Modular Recurrent Cognitive Architecture
 

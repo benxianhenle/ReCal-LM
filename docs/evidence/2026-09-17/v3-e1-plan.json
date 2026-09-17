@@ -1,0 +1,24 @@
+{
+  "source": "/cloud/cloud-ssd1/recal-experiments/depth-diagnostic-33291-20260916/A_step_000034243.pt",
+  "checkpoint": "/workspace/ReCal-LM/runs/v3-e1-warmstart/E1-final.pt",
+  "token_cap": 3000000,
+  "peak_lr": 5e-05,
+  "warmup_steps": 300,
+  "started_at": 1789652520.9646173,
+  "deadline": 1789659720.9646184,
+  "stages": [
+    "E1"
+  ],
+  "optimizer_reset": true,
+  "scheduler_reset": true,
+  "lambda_A": 0,
+  "lambda_monotonic": 0,
+  "lambda_drift": 0.05,
+  "depth_weights": [
+    0.3333333333333333,
+    0.3333333333333333,
+    0.3333333333333333
+  ],
+  "depth_limit": 3,
+  "checkpoint_policy": "Retain passing endpoint for E2 only; archive all data and discard failed weights"
+}

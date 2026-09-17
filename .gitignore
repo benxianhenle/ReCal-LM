@@ -1,6 +1,6 @@
 .conf
 .hf_cache/
-data/
+/data/
 runs/
 artifacts/
 __pycache__/
@@ -16,3 +16,14 @@ venv/
 *.ckpt
 *.safetensors
 *.jsonl
+
+# Machine-local experiment output; publish selected snapshots under docs/evidence.
+/reports/
+/environment-check-h20/
+/smoke/
+/install-*.log
+/r3b-initial-check.log
+*.tar.gz
+*.parquet
+.env
+.env.*

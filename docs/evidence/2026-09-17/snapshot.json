@@ -1,0 +1,38 @@
+{
+  "captured_at_utc": "2026-09-17T13:53:22.867756+00:00",
+  "phase": "V3-E1 warm-start",
+  "training_complete": false,
+  "last_training_row": {
+    "phase_step": 156,
+    "global_step": 34399,
+    "training_tokens": 638976,
+    "learning_rate": 2.6000000000000002e-05,
+    "grad_norm": 1.573612928390503,
+    "batch_sha256": "3734ff41302aec012bdfa525e5d2aec6b3811ee0276e749604f16ffc1a571427",
+    "loss": 6.801548659801483,
+    "loss_text": 6.801469624042511,
+    "loss_drift": 0.0015808331372682005,
+    "ce_depth_1": 6.797719061374664,
+    "ce_depth_2": 6.805899202823639,
+    "ce_depth_3": 6.800790250301361
+  },
+  "last_status": {
+    "action": "training",
+    "time": 1789653137.8728807,
+    "pid": 9451,
+    "phase_step": 140,
+    "global_step": 34383,
+    "training_tokens": 573440,
+    "learning_rate": 2.3333333333333336e-05,
+    "grad_norm": 7.3849945068359375,
+    "batch_sha256": "88c69e63e3a7dc33f5b8365822381b47580fa55a4159e4a8e17d340445e74a5a",
+    "loss": 6.196804106235504,
+    "loss_text": 6.1967058181762695,
+    "loss_drift": 0.0019653817362268455,
+    "ce_depth_1": 6.197064101696014,
+    "ce_depth_2": 6.19638991355896,
+    "ce_depth_3": 6.196662724018097,
+    "tokens_per_second": 1020.102547306177
+  },
+  "available_validation_files": []
+}

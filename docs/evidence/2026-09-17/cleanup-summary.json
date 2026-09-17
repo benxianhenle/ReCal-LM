@@ -1,0 +1,23 @@
+{
+  "deleted_files": 18,
+  "deleted_bytes": 75811700436,
+  "free_before": {
+    "/workspace/ReCal-LM": 23213133824,
+    "/cloud/cloud-ssd1/recal-experiments/depth-diagnostic-33291-20260916": 10263404544
+  },
+  "free_after": {
+    "/workspace/ReCal-LM": 53139648512,
+    "/cloud/cloud-ssd1/recal-experiments/depth-diagnostic-33291-20260916": 54716358656
+  },
+  "preserved": [
+    "/cloud/cloud-ssd1/recal-experiments/depth-diagnostic-33291-20260916/A_step_000034243.pt",
+    "/workspace/ReCal-LM/runs/four-model-r3b-10b/checkpoints/step_000033291_late.pt"
+  ],
+  "finished_at": 1789652720.8771188,
+  "backup_model_copies_removed": 4,
+  "total_logical_bytes_reclaimed": 77079422283,
+  "free_after_all": {
+    "/workspace/ReCal-LM": 53139439616,
+    "/cloud/cloud-ssd1": 55984087040
+  }
+}
